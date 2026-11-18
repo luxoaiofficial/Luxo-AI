@@ -1,0 +1,861 @@
+{
+  "entities": {
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Trusted administrator membership marker document.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Administrator Firebase Auth UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        }
+      },
+      "required": ["uid", "createdAt"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Privacy-preserving workspace preferences for an authenticated user (zero PII).",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name shown in workspace.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "avatarText": {
+          "type": "string",
+          "description": "Initials for avatar monogram.",
+          "minLength": 1,
+          "maxLength": 4
+        },
+        "theme": {
+          "type": "string",
+          "description": "UI color theme preference.",
+          "enum": ["system", "light", "dark"],
+          "maxLength": 10
+        },
+        "voiceName": {
+          "type": "string",
+          "description": "Preferred voice persona.",
+          "minLength": 1,
+          "maxLength": 30
+        },
+        "voiceRate": {
+          "type": "number",
+          "description": "Speech playback rate."
+        },
+        "customTone": {
+          "type": "string",
+          "description": "Selected response tone.",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "customInstructions": {
+          "type": "string",
+          "description": "Custom instructions configured by user.",
+          "maxLength": 1500
+        },
+        "workspaceType": {
+          "type": "string",
+          "description": "Selected workspace category.",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "avatarText",
+        "theme",
+        "voiceName",
+        "voiceRate",
+        "customTone",
+        "customInstructions",
+        "workspaceType",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PublicSocialProfile": {
+      "title": "PublicSocialProfile",
+      "description": "Public community profile isolated from private user data (no email or phone PII).",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Public display name.",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "handle": {
+          "type": "string",
+          "description": "Normalized public username handle.",
+          "minLength": 3,
+          "maxLength": 28,
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "roleTitle": {
+          "type": "string",
+          "description": "Short professional headline.",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "bio": {
+          "type": "string",
+          "description": "User biography text.",
+          "maxLength": 280
+        },
+        "avatarUrl": {
+          "type": "string",
+          "description": "Avatar preset identifier or HTTPS/uploads URL.",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "interests": {
+          "type": "array",
+          "description": "Bounded list of up to 10 interest tags."
+        },
+        "visibility": {
+          "type": "string",
+          "description": "Visibility guard for query enforcement.",
+          "enum": ["public"],
+          "maxLength": 16
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "handle",
+        "roleTitle",
+        "bio",
+        "avatarUrl",
+        "interests",
+        "visibility",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UserFavorite": {
+      "title": "UserFavorite",
+      "description": "User bookmark for an event or announcement.",
+      "type": "object",
+      "properties": {
+        "favoriteId": {
+          "type": "string",
+          "description": "Unique favorite record ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "targetType": {
+          "type": "string",
+          "description": "Whether favorited item is an event or announcement.",
+          "enum": ["event", "announcement"],
+          "maxLength": 20
+        },
+        "targetId": {
+          "type": "string",
+          "description": "Target event or announcement ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        }
+      },
+      "required": ["favoriteId", "ownerId", "targetType", "targetId", "createdAt"]
+    },
+    "SocialConnection": {
+      "title": "SocialConnection",
+      "description": "Directional social edge representing following and/or friendship.",
+      "type": "object",
+      "properties": {
+        "peerId": {
+          "type": "string",
+          "description": "Target user UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "relationType": {
+          "type": "string",
+          "description": "Connection state.",
+          "enum": ["following", "friend", "both"],
+          "maxLength": 20
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": ["peerId", "ownerId", "relationType", "createdAt", "updatedAt"]
+    },
+    "PlatformEventDoc": {
+      "title": "PlatformEventDoc",
+      "description": "Platform calendar event authored by an administrator.",
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "description": "Unique event ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "description": "Event title.",
+          "minLength": 5,
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "description": "Event details.",
+          "minLength": 12,
+          "maxLength": 1500
+        },
+        "category": {
+          "type": "string",
+          "description": "Event category.",
+          "enum": [
+            "Konferans & Zirve",
+            "Atölye (Workshop)",
+            "Topluluk Buluşması",
+            "Canlı Yayın & Lansman"
+          ],
+          "maxLength": 40
+        },
+        "dateIso": {
+          "type": "string",
+          "description": "ISO date YYYY-MM-DD.",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "startTime": {
+          "type": "string",
+          "description": "Start time HH:mm.",
+          "minLength": 5,
+          "maxLength": 5
+        },
+        "endTime": {
+          "type": "string",
+          "description": "End time HH:mm.",
+          "minLength": 5,
+          "maxLength": 5
+        },
+        "location": {
+          "type": "string",
+          "description": "Physical venue or online stream label.",
+          "minLength": 3,
+          "maxLength": 140
+        },
+        "speakerName": {
+          "type": "string",
+          "description": "Speaker or host name.",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "capacity": {
+          "type": "number",
+          "description": "Maximum attendee capacity."
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "Admin UID who created the event.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "status": {
+          "type": "string",
+          "description": "Publication status.",
+          "enum": ["published", "archived"],
+          "maxLength": 20
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "eventId",
+        "title",
+        "description",
+        "category",
+        "dateIso",
+        "startTime",
+        "endTime",
+        "location",
+        "speakerName",
+        "capacity",
+        "createdBy",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PlatformAnnouncementDoc": {
+      "title": "PlatformAnnouncementDoc",
+      "description": "Official platform announcement authored by an administrator.",
+      "type": "object",
+      "properties": {
+        "announcementId": {
+          "type": "string",
+          "description": "Unique announcement ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "description": "Announcement headline.",
+          "minLength": 5,
+          "maxLength": 120
+        },
+        "summary": {
+          "type": "string",
+          "description": "Announcement content.",
+          "minLength": 12,
+          "maxLength": 1500
+        },
+        "priority": {
+          "type": "string",
+          "description": "Urgency classification.",
+          "enum": ["Önemli", "Güncelleme", "Topluluk"],
+          "maxLength": 24
+        },
+        "tag": {
+          "type": "string",
+          "description": "Short topic label.",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "pinned": {
+          "type": "boolean",
+          "description": "Whether pinned at top of feed."
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "Admin UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "status": {
+          "type": "string",
+          "description": "Publication status.",
+          "enum": ["published", "archived"],
+          "maxLength": 20
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "announcementId",
+        "title",
+        "summary",
+        "priority",
+        "tag",
+        "pinned",
+        "createdBy",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PrivateChatRoomDoc": {
+      "title": "PrivateChatRoomDoc",
+      "description": "Direct 1:1 or private group chat room with bounded memberIds.",
+      "type": "object",
+      "properties": {
+        "roomId": {
+          "type": "string",
+          "description": "Unique room ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "description": "Room display name.",
+          "minLength": 3,
+          "maxLength": 80
+        },
+        "topic": {
+          "type": "string",
+          "description": "Room topic summary.",
+          "maxLength": 200
+        },
+        "roomType": {
+          "type": "string",
+          "description": "Room privacy classification.",
+          "enum": ["direct", "private-room"],
+          "maxLength": 20
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Room creator UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "memberIds": {
+          "type": "array",
+          "description": "Bounded list of up to 10 authorized member UIDs."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "roomId",
+        "name",
+        "topic",
+        "roomType",
+        "ownerId",
+        "memberIds",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "RoomMessageDoc": {
+      "title": "RoomMessageDoc",
+      "description": "Immutable message inside a private or direct chat room.",
+      "type": "object",
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "description": "Unique message ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "roomId": {
+          "type": "string",
+          "description": "Parent room ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "senderId": {
+          "type": "string",
+          "description": "Sender Firebase Auth UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "senderName": {
+          "type": "string",
+          "description": "Sender display name.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "content": {
+          "type": "string",
+          "description": "Message text body.",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "visibleToUids": {
+          "type": "array",
+          "description": "Bounded list of up to 10 room member UIDs for O(1) list enforcement."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        }
+      },
+      "required": [
+        "messageId",
+        "roomId",
+        "senderId",
+        "senderName",
+        "content",
+        "visibleToUids",
+        "createdAt"
+      ]
+    },
+    "ChatRecord": {
+      "title": "ChatRecord",
+      "description": "Synchronized AI chat metadata owned by a user.",
+      "type": "object",
+      "properties": {
+        "chatId": {
+          "type": "string",
+          "description": "Unique chat identifier.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the user who owns this chat.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "description": "Conversation title.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "modelId": {
+          "type": "string",
+          "description": "Active Luxo AI model ID.",
+          "enum": [
+            "gemini-4-argon",
+            "gemini-4-hydrogen",
+            "gemini-4-ultra",
+            "gemini-4-pro-code",
+            "gemini-3-8-pro",
+            "gemini-3-8-flash",
+            "gemini-3-8-live-think",
+            "gemini-3-1-pro",
+            "gemini-3-1-flash-lite",
+            "gemini-flash-latest",
+            "gemini-omni-flash",
+            "antigravity-agent",
+            "deep-research-agent",
+            "deep-research-max",
+            "gemini-transcribe",
+            "gemma-open-27b",
+            "gemma-3-12b",
+            "chatgpt-5-2-pro",
+            "gpt-image-2-ultra",
+            "chatgpt-5-omni",
+            "gpt-5-pro",
+            "chatgpt-5-mini",
+            "gpt-4-5-orion",
+            "gpt-4-1",
+            "gpt-4-1-mini",
+            "gpt-4-1-nano",
+            "gpt-4o",
+            "gpt-4o-mini",
+            "openai-o4-pro",
+            "chatgpt-o3-pro",
+            "openai-o3",
+            "openai-o4-mini",
+            "openai-o1-pro",
+            "openai-codex-agent",
+            "claude-4-6-opus",
+            "claude-4-5-sonnet",
+            "claude-4-opus",
+            "claude-4-sonnet",
+            "claude-4-haiku",
+            "claude-3-7-sonnet",
+            "claude-3-5-sonnet",
+            "claude-3-5-haiku",
+            "claude-3-opus",
+            "deepseek-v3-2-exp",
+            "deepseek-r2",
+            "deepseek-v3-1",
+            "deepseek-r1",
+            "deepseek-r1-zero",
+            "deepseek-v3-turbo",
+            "deepseek-coder-v3",
+            "deepseek-math-v2",
+            "deepseek-prover-v2",
+            "grok-4-heavy",
+            "grok-3-ultra",
+            "grok-3-thinking",
+            "grok-3-mini",
+            "grok-2-vision",
+            "llama-4-behemoth",
+            "llama-4-reasoning",
+            "llama-4-maverick",
+            "llama-4-scout",
+            "llama-3-3-70b",
+            "mistral-large-2",
+            "mistral-medium-3",
+            "mistral-saba",
+            "codestral-25",
+            "pixtral-large",
+            "magistral-reasoning",
+            "qwen-3-max",
+            "qwen-3-coder-plus",
+            "qwen-3-thinking",
+            "qwen-2-5-coder",
+            "qwq-32b",
+            "qwen-vl-max",
+            "qwen-image-edit-pro",
+            "nano-banana-2-1-ultra",
+            "nano-banana-pro-4k",
+            "imagen-4-ultra",
+            "flux-1-1-pro-ultra",
+            "veo-3-1-ultra-cinema",
+            "veo-3-cinema-pro",
+            "wan-2-2-cinema-ultra",
+            "kling-2-5-turbo",
+            "higgsfield-cinema",
+            "higgsfield-dop-turbo",
+            "sora-veo-director",
+            "runway-gen-4",
+            "kling-2-master",
+            "seedance-1-pro",
+            "hailuo-minimax-video",
+            "luma-ray-2",
+            "pika-2-2-studio",
+            "midjourney-v7-art",
+            "perplexity-sonar-pro",
+            "perplexity-reasoning",
+            "perplexity-research",
+            "kimi-k2-thinking",
+            "kimi-k1-5",
+            "cohere-command-a",
+            "cohere-command-r-plus",
+            "microsoft-phi-4",
+            "amazon-nova-premier",
+            "nvidia-nemotron-ultra",
+            "glm-4-plus",
+            "minimax-01",
+            "yi-lightning",
+            "luxo-auto-router",
+            "luxo-flash",
+            "luxo-ultra",
+            "luxo-argon",
+            "luxo-quantum-math",
+            "luxo-dev-helper",
+            "luxo-dev"
+          ],
+          "maxLength": 40
+        },
+        "lastUserPrompt": {
+          "type": "string",
+          "description": "Most recent user message text.",
+          "maxLength": 4000
+        },
+        "lastAssistantReply": {
+          "type": "string",
+          "description": "Most recent assistant response text.",
+          "maxLength": 8000
+        },
+        "messageCount": {
+          "type": "number",
+          "description": "Total number of messages in the thread."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "chatId",
+        "ownerId",
+        "title",
+        "modelId",
+        "lastUserPrompt",
+        "lastAssistantReply",
+        "messageCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "FeedbackReport": {
+      "title": "FeedbackReport",
+      "description": "User-submitted bug report or feature suggestion without email PII.",
+      "type": "object",
+      "properties": {
+        "feedbackId": {
+          "type": "string",
+          "description": "Unique feedback document ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorId": {
+          "type": "string",
+          "description": "UID of the authenticated author.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "category": {
+          "type": "string",
+          "description": "Feedback category.",
+          "enum": ["Hata Bildirimi", "Özellik Önerisi", "Genel Geri Bildirim"],
+          "maxLength": 40
+        },
+        "subject": {
+          "type": "string",
+          "description": "Short summary subject.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "message": {
+          "type": "string",
+          "description": "Detailed feedback content.",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "status": {
+          "type": "string",
+          "description": "Lifecycle status of the feedback item.",
+          "enum": ["submitted", "archived"],
+          "maxLength": 20
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "feedbackId",
+        "authorId",
+        "category",
+        "subject",
+        "message",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Trusted administrator registry."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user workspace preferences (zero email/PII)."
+    },
+    "/users/{userId}/chats/{chatId}": {
+      "schema": { "$ref": "#/entities/ChatRecord" },
+      "description": "User's synchronized AI chat threads subcollection."
+    },
+    "/users/{userId}/favorites/{favoriteId}": {
+      "schema": { "$ref": "#/entities/UserFavorite" },
+      "description": "User's favorited calendar events and announcements."
+    },
+    "/users/{userId}/connections/{peerId}": {
+      "schema": { "$ref": "#/entities/SocialConnection" },
+      "description": "User's followings and friend connections."
+    },
+    "/publicProfiles/{userId}": {
+      "schema": { "$ref": "#/entities/PublicSocialProfile" },
+      "description": "Public social profiles with bio, interests, and avatar (zero PII)."
+    },
+    "/events/{eventId}": {
+      "schema": { "$ref": "#/entities/PlatformEventDoc" },
+      "description": "Admin-managed platform calendar events."
+    },
+    "/announcements/{announcementId}": {
+      "schema": { "$ref": "#/entities/PlatformAnnouncementDoc" },
+      "description": "Admin-managed platform announcements."
+    },
+    "/privateRooms/{roomId}": {
+      "schema": { "$ref": "#/entities/PrivateChatRoomDoc" },
+      "description": "Direct and private group chat rooms with bounded memberIds."
+    },
+    "/privateRooms/{roomId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/RoomMessageDoc" },
+      "description": "Messages inside direct and private chat rooms."
+    },
+    "/feedback/{feedbackId}": {
+      "schema": { "$ref": "#/entities/FeedbackReport" },
+      "description": "Feedback reports submitted by verified users."
+    }
+  }
+}
