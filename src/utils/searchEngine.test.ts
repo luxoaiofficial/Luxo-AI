@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   buildSearchSuggestions,
   executeEnhancedSearch,
+  highlightMatchSegments,
   type SearchableItem,
 } from './searchEngine.ts';
 
@@ -92,4 +93,10 @@ test('buildSearchSuggestions returns prefix-ranked autocomplete suggestions', ()
 
   const emptySuggestions = buildSearchSuggestions(SAMPLE_ITEMS, '', 4);
   assert.equal(emptySuggestions.length, 4);
+});
+
+test('highlightMatchSegments splits query tokens case-insensitively', () => {
+  const segs = highlightMatchSegments('GitHub CI/CD Yayınlama', 'github');
+  assert.equal(segs.some((s) => s.matched && s.text.toLowerCase() === 'github'), true);
+  assert.equal(highlightMatchSegments('Gemini 4 Argon', '').length, 1);
 });

@@ -154,10 +154,10 @@ export function buildSearchSuggestions(
   if (!clean) {
     const popularSeeds: SearchSuggestion[] = [
       { text: 'Gemini 4 Argon', category: 'model', matchCount: 1 },
-      { text: 'Claude', category: 'model', matchCount: 1 },
-      { text: 'DeepSeek', category: 'model', matchCount: 1 },
+      { text: 'GitHub', category: 'action', matchCount: 1 },
+      { text: 'Anket', category: 'community', matchCount: 1 },
+      { text: 'Forum', category: 'community', matchCount: 1 },
       { text: 'Otonom Gelişim', category: 'action', matchCount: 1 },
-      { text: 'Argon Kod', category: 'action', matchCount: 1 },
       { text: 'SEO', category: 'community', matchCount: 1 },
     ];
     return popularSeeds.slice(0, limit);
@@ -197,3 +197,38 @@ export function buildSearchSuggestions(
     })
     .slice(0, limit);
 }
+
+export interface MatchSegment {
+  text: string;
+  matched: boolean;
+}
+
+export function highlightMatchSegments(text: string, rawQuery: string): MatchSegment[] {
+  const source = text || '';
+  const tokens = Array.from(
+    new Set(
+      (rawQuery || '')
+        .trim()
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((t) => t.length >= 2)
+    )
+  ).sort((a, b) => b.length - a.length);
+
+  if (tokens.length === 0 || !source) {
+    return [{ text: source, matched: false }];
+  }
+
+  const escaped = tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
+  const parts = source.split(regex);
+  const tokenSet = new Set(tokens);
+
+  return parts
+    .filter((p) => p.length > 0)
+    .map((part) => ({
+      text: part,
+      matched: tokenSet.has(part.toLowerCase()),
+    }));
+}
+

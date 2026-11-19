@@ -9,6 +9,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Cloud,
   Columns2,
   Copy,
   Download,
@@ -142,6 +143,7 @@ interface ChatWorkspaceProps {
   isCollabConnected?: boolean;
   onOpenCollabPanel?: () => void;
   onTypingActivity?: (isTyping: boolean) => void;
+  cloudSyncVisible?: boolean;
   user: LuxoUser;
   isStreaming: boolean;
 }
@@ -202,6 +204,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
   isCollabConnected = false,
   onOpenCollabPanel,
   onTypingActivity,
+  cloudSyncVisible = false,
   user,
   isStreaming,
 }) => {
@@ -526,16 +529,16 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
         </div>
       )}
 
-      <header className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 bg-white dark:bg-[#18181b] z-20 shrink-0 border-b border-neutral-100 dark:border-neutral-800 min-w-0">
-        <div className="flex items-center gap-2 min-w-0 flex-1 sm:flex-initial">
+      <header className="flex items-center justify-between gap-1.5 sm:gap-3 px-2.5 sm:px-4 py-2 sm:py-3 bg-white dark:bg-[#18181b] z-20 shrink-0 border-b border-neutral-100 dark:border-neutral-800 min-w-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 sm:flex-initial">
           <button
             type="button"
             onClick={onOpenSidebar}
-            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs flex flex-col items-center justify-center gap-1 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
+            className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs flex flex-col items-center justify-center gap-1 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
             aria-label="Menüyü Aç"
           >
             <span className="w-4 h-0.5 bg-black dark:bg-white rounded-full" />
-            <span className="w-3.5 h-0.5 bg-black dark:bg-white rounded-full self-start ml-2.5 sm:ml-3" />
+            <span className="w-3.5 h-0.5 bg-black dark:bg-white rounded-full self-start ml-3" />
           </button>
 
           <button
@@ -543,7 +546,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
             onClick={() => setShowModelModal(true)}
             aria-label={`Aktif Model: ${currentModel.name}. Model seçmek için tıklayın`}
             data-testid="header-model-selector-btn"
-            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-full bg-[#e8f3ff] dark:bg-blue-950/60 hover:bg-[#d8ebff] dark:hover:bg-blue-900/60 text-[#0266ff] dark:text-blue-300 text-xs font-bold transition active:scale-95 cursor-pointer shadow-xs min-w-0 sm:shrink-0 max-w-[185px] sm:max-w-[250px]"
+            className="min-h-[44px] sm:min-h-0 flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-full bg-[#e8f3ff] dark:bg-blue-950/60 hover:bg-[#d8ebff] dark:hover:bg-blue-900/60 text-[#0266ff] dark:text-blue-300 text-xs font-bold transition active:scale-95 cursor-pointer shadow-xs min-w-0 sm:shrink-0 max-w-[136px] sm:max-w-[250px]"
           >
             <span
               className="w-5 h-5 rounded-full flex items-center justify-center text-white shrink-0"
@@ -579,17 +582,18 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
           )}
         </div>
 
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {onOpenCommandPalette && (
             <button
               type="button"
+              data-testid="header-search-btn"
               onClick={onOpenCommandPalette}
               aria-label="Hızlı Model ve Komut Arama"
-              title="Hızlı Arama (Ctrl+K)"
-              className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-[#202123] dark:hover:bg-neutral-800 border border-neutral-200/80 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 text-xs font-semibold transition cursor-pointer whitespace-nowrap"
+              title="Gelişmiş Arama (Ctrl+K)"
+              className="w-11 h-11 sm:w-auto sm:h-9 flex items-center justify-center gap-1.5 sm:px-2.5 sm:py-1.5 rounded-full sm:rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-[#202123] dark:hover:bg-neutral-800 border border-neutral-200/80 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 text-xs font-semibold transition active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
             >
-              <Search className="w-3.5 h-3.5" />
-              <span className="font-mono text-[11px]">⌘K</span>
+              <Search className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+              <span className="hidden lg:inline font-mono text-[11px]">⌘K</span>
             </button>
           )}
           {onToggleTheme && (
@@ -599,7 +603,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
               onClick={onToggleTheme}
               aria-label={isDarkTheme ? 'Açık Temaya Geç' : 'Koyu Temaya Geç'}
               title={isDarkTheme ? 'Açık Tema (Gündüz)' : 'Koyu Tema (Gece)'}
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs flex items-center justify-center text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
+              className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs flex items-center justify-center text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
             >
               {isDarkTheme ? (
                 <Sun className="w-4 h-4 text-amber-400" />
@@ -628,7 +632,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
               onClick={onOpenEvolutionView}
               aria-label="Otonom Gelişim ve Öz-Onarım Merkezi"
               title="Kendi Kendini Geliştiren AI & Hata Onarım Merkezi"
-              className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/25 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
+              className="hidden sm:flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/25 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
             >
               <Brain className="w-3.5 h-3.5" />
               <span className="hidden xl:inline">Otonom Gelişim</span>
@@ -733,7 +737,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
               type="button"
               data-testid="header-notifications-btn"
               onClick={onOpenNotifications}
-              className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs flex items-center justify-center text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
+              className="relative w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs flex items-center justify-center text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
               aria-label="Bildirim Merkezi"
               title="Bildirimler & Tercihler"
             >
@@ -751,7 +755,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
           <button
             type="button"
             onClick={onOpenNewChat}
-            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs flex items-center justify-center text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
+            className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs flex items-center justify-center text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
             aria-label="Yeni Sohbet"
             title="Yeni Sohbet"
           >
@@ -931,6 +935,48 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                     </div>
                     <div className="text-xs text-neutral-500 dark:text-neutral-400">
                       SEO meta açıklaması, blog başlığı üret ve siteye yayınla
+                    </div>
+                  </div>
+                </button>
+              )}
+
+              {onOpenHubView && (
+                <button
+                  type="button"
+                  data-testid="welcome-community-hub-card"
+                  onClick={onOpenHubView}
+                  className="flex items-center gap-3.5 px-4 py-4 bg-white dark:bg-[#202123] rounded-2xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left group"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
+                    <Users className="w-5 h-5 group-hover:scale-105 transition" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-neutral-900 dark:text-white">
+                      Topluluk Forumu, Anketler & Quiz
+                    </div>
+                    <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                      Yeni anket aç, oy ver, teknik teste katıl ve forumda tartış
+                    </div>
+                  </div>
+                </button>
+              )}
+
+              {onOpenCommandPalette && (
+                <button
+                  type="button"
+                  data-testid="welcome-search-card"
+                  onClick={onOpenCommandPalette}
+                  className="flex items-center gap-3.5 px-4 py-4 bg-white dark:bg-[#202123] rounded-2xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left group"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-neutral-900/10 dark:bg-white/10 text-neutral-800 dark:text-neutral-200 flex items-center justify-center shrink-0">
+                    <Search className="w-5 h-5 group-hover:scale-105 transition" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-neutral-900 dark:text-white">
+                      Gelişmiş Arama ({totalModelCount} Model, Forum, CMS & GitHub)
+                    </div>
+                    <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                      Modeller, makaleler, anketler ve GitHub ayarlarına tek dokunuş
                     </div>
                   </div>
                 </button>
@@ -2169,7 +2215,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
 
                 <form
                   onSubmit={handleSubmit}
-                  className="flex items-center gap-1.5 sm:gap-2 px-3 py-2"
+                  className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2"
                 >
                   <input
                     type="file"
@@ -2182,7 +2228,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-8 h-8 rounded-full flex items-center justify-center text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200/80 dark:hover:bg-neutral-800 transition cursor-pointer shrink-0"
+                    className="w-11 h-11 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200/80 dark:hover:bg-neutral-800 transition cursor-pointer shrink-0"
                     aria-label="Dosya veya Resim Ekle"
                     title="Dosya veya Görsel Ekle"
                   >
@@ -2197,16 +2243,16 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                     aria-haspopup="dialog"
                     aria-label="Üretim, Muhakeme ve Sentez Araçları"
                     title="Görsel, Video, Derin Düşünme, Web Araştırması ve Sentez Araçları"
-                    className={`h-8 px-2.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${
+                    className={`w-11 h-11 sm:w-auto sm:h-9 sm:px-2.5 rounded-full text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${
                       isToolsMenuOpen || activeToolCount > 0
                         ? 'bg-indigo-600 text-white shadow-xs'
                         : 'bg-white dark:bg-[#27282f] text-neutral-700 dark:text-neutral-200 border border-neutral-200/80 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800'
                     }`}
                   >
-                    <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
-                    <span className="hidden xs:inline sm:inline">Araçlar</span>
+                    <SlidersHorizontal className="w-4 h-4 sm:w-3.5 sm:h-3.5 shrink-0" />
+                    <span className="hidden sm:inline">Araçlar</span>
                     {activeToolCount > 0 && (
-                      <span className="font-mono text-[11px] tabular-nums">
+                      <span className="hidden sm:inline font-mono text-[11px] tabular-nums">
                         ({activeToolCount})
                       </span>
                     )}
@@ -2227,15 +2273,15 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                     }}
                     placeholder={
                       creationMode === 'image'
-                        ? 'Üretilecek fotoğrafı tarif edin (Örn: Mars yüzeyinde yürüyen kırmızı astronot)...'
+                        ? 'Üretilecek fotoğrafı tarif edin...'
                         : creationMode === 'video'
-                        ? 'Üretilecek MP4 video sahnesini tarif edin (Örn: Gün batımında İstanbul Boğazı drone uçuşu)...'
+                        ? 'Üretilecek video sahnesini tarif edin...'
                         : compareMode
-                        ? `${LUXO_MODELS[compareModelA].name} ve ${LUXO_MODELS[compareModelB].name} modellerine aynı anda sor...`
-                        : "Luxo AI'ya sor veya Araçlar'dan mod seç..."
+                        ? `${LUXO_MODELS[compareModelA].name} vs ${LUXO_MODELS[compareModelB].name}...`
+                        : "Luxo AI'ya sor..."
                     }
                     disabled={isStreaming}
-                    className="flex-1 min-w-0 bg-transparent text-sm text-neutral-900 dark:text-white placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:outline-hidden py-1.5 px-1"
+                    className="flex-1 min-w-0 bg-transparent text-sm text-neutral-900 dark:text-white placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:outline-hidden py-2 px-1"
                   />
 
                   <button
@@ -2284,7 +2330,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                       };
                       rec.start();
                     }}
-                    className={`p-2 rounded-full transition cursor-pointer shrink-0 ${
+                    className={`w-11 h-11 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition cursor-pointer shrink-0 ${
                       isRecording
                         ? 'text-red-500 bg-red-100 dark:bg-red-900/30'
                         : 'text-neutral-700 dark:text-neutral-300 hover:text-black dark:hover:text-white hover:bg-neutral-200/70 dark:hover:bg-neutral-800'
@@ -2298,10 +2344,10 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                     <button
                       type="submit"
                       disabled={isStreaming}
-                      className="w-8 h-8 rounded-full bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 flex items-center justify-center transition active:scale-95 cursor-pointer shrink-0"
+                      className="w-11 h-11 sm:w-9 sm:h-9 rounded-full bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 flex items-center justify-center transition active:scale-95 cursor-pointer shrink-0"
                       aria-label="Gönder"
                     >
-                      <Send className="w-3.5 h-3.5" />
+                      <Send className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                     </button>
                   )}
 
@@ -2310,7 +2356,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                       type="button"
                       data-testid="composer-voice-cmd-btn"
                       onClick={onOpenVoiceCommands}
-                      className="hidden sm:flex items-center gap-1 px-2.5 h-8 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 text-xs font-semibold transition cursor-pointer whitespace-nowrap shrink-0"
+                      className="hidden sm:flex items-center gap-1 px-2.5 h-9 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 text-xs font-semibold transition cursor-pointer whitespace-nowrap shrink-0"
                       aria-label="Sesli Komut Modu"
                       title="Sesli Komut Modu (Doğal dil ile tema, proje ve gezinme komutları)"
                     >
@@ -2322,7 +2368,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                   <button
                     type="button"
                     onClick={onOpenVoiceModal}
-                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#1b64f2] hover:bg-blue-700 text-white flex items-center justify-center transition active:scale-95 cursor-pointer shadow-xs shrink-0"
+                    className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-[#1b64f2] hover:bg-blue-700 text-white flex items-center justify-center transition active:scale-95 cursor-pointer shadow-xs shrink-0"
                     aria-label="Canlı Sesli Sohbet"
                     title="Canlı Ses Stüdyosu (10 Ses)"
                   >
@@ -2337,6 +2383,24 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
               </div>
             </div>
           )}
+
+          {/* Subtle Firestore Cloud Sync Indicator */}
+          <div className="mt-1.5 min-h-[18px] flex items-center justify-center pointer-events-none select-none">
+            <div
+              data-testid="cloud-sync-indicator"
+              role="status"
+              aria-live="polite"
+              aria-hidden={!cloudSyncVisible}
+              className={`inline-flex items-center gap-1.5 text-[11px] font-medium text-neutral-500 dark:text-neutral-400 transition-all duration-300 ${
+                cloudSyncVisible
+                  ? 'opacity-100 translate-y-0'
+                  : 'opacity-0 translate-y-1'
+              }`}
+            >
+              <Cloud className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <span>Saved to Cloud</span>
+            </div>
+          </div>
         </div>
       </div>
 

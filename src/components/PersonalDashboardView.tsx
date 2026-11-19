@@ -19,6 +19,7 @@ import {
   PenLine,
   Pin,
   PinOff,
+  Search,
   Settings,
   Sparkles,
   Star,
@@ -40,6 +41,7 @@ import {
   AVAILABLE_WORKSPACES,
 } from '../utils/dashboardEngine';
 import type { PublishedStudioArticle } from '../utils/contentStudioEngine';
+import { LiveModelTelemetryChart } from './LiveModelTelemetryChart';
 import { ModelPerformanceMetricsPanel } from './ModelPerformanceMetricsPanel';
 
 interface PersonalDashboardViewProps {
@@ -65,6 +67,7 @@ interface PersonalDashboardViewProps {
   onCreateQuickProject: (name: string, category: LuxoProject['category']) => void;
   onOpenLibraryItemInChat: (title: string, content: string) => void;
   onOpenVoiceCommands: () => void;
+  onOpenCommandPalette?: () => void;
   onOpenAuthModal: () => void;
   onSignOut: () => void;
 }
@@ -114,6 +117,7 @@ export const PersonalDashboardView: React.FC<PersonalDashboardViewProps> = ({
   onCreateQuickProject,
   onOpenLibraryItemInChat,
   onOpenVoiceCommands,
+  onOpenCommandPalette,
   onOpenAuthModal,
   onSignOut,
 }) => {
@@ -206,14 +210,14 @@ export const PersonalDashboardView: React.FC<PersonalDashboardViewProps> = ({
       className="flex flex-col h-full bg-[#fcfcfc] dark:bg-[#141518] text-neutral-900 dark:text-neutral-100 overflow-hidden"
     >
       {/* Top Bar */}
-      <header className="flex items-center justify-between gap-2 sm:gap-3 px-4 sm:px-6 py-3.5 bg-white dark:bg-[#18191d] border-b border-neutral-200 dark:border-neutral-800 shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
+      <header className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-6 py-2.5 sm:py-3.5 bg-white dark:bg-[#18191d] border-b border-neutral-200 dark:border-neutral-800 shrink-0 min-w-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             type="button"
             onClick={onBack}
-            className="px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-xs font-semibold text-neutral-700 dark:text-neutral-200 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0"
+            className="min-h-[44px] sm:min-h-0 px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-xs font-semibold text-neutral-700 dark:text-neutral-200 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0"
           >
-            <ArrowLeft className="w-3.5 h-3.5" />
+            <ArrowLeft className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
             <span className="hidden sm:inline">Sohbete Dön</span>
           </button>
           <div className="flex items-center gap-2 min-w-0">
@@ -224,14 +228,25 @@ export const PersonalDashboardView: React.FC<PersonalDashboardViewProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {onOpenCommandPalette && (
+            <button
+              type="button"
+              data-testid="dashboard-search-btn"
+              onClick={onOpenCommandPalette}
+              aria-label="Hızlı Arama"
+              className="w-11 h-11 sm:w-8 sm:h-8 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 flex items-center justify-center transition cursor-pointer shrink-0"
+            >
+              <Search className="w-4 h-4 text-neutral-700 dark:text-neutral-300" />
+            </button>
+          )}
           <button
             type="button"
             data-testid="dashboard-voice-cmd-btn"
             onClick={onOpenVoiceCommands}
-            className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+            className="min-h-[44px] sm:min-h-0 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
           >
-            <Mic className="w-3.5 h-3.5" />
+            <Mic className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
             <span className="hidden sm:inline">Sesli Komut</span>
           </button>
 
@@ -239,7 +254,7 @@ export const PersonalDashboardView: React.FC<PersonalDashboardViewProps> = ({
             type="button"
             onClick={onToggleTheme}
             aria-label={isDarkTheme ? 'Açık Temaya Geç' : 'Koyu Temaya Geç'}
-            className="w-8 h-8 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 flex items-center justify-center transition cursor-pointer shrink-0"
+            className="w-11 h-11 sm:w-8 sm:h-8 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 flex items-center justify-center transition cursor-pointer shrink-0"
           >
             {isDarkTheme ? (
               <Sun className="w-4 h-4 text-amber-400" />
@@ -253,20 +268,20 @@ export const PersonalDashboardView: React.FC<PersonalDashboardViewProps> = ({
               type="button"
               data-testid="dashboard-auth-btn"
               onClick={onOpenAuthModal}
-              className="px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+              className="min-h-[44px] sm:min-h-0 px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
             >
               <LogIn className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-              <span>Giriş / Kayıt</span>
+              <span className="hidden xs:inline sm:inline">Giriş / Kayıt</span>
             </button>
           ) : (
             <button
               type="button"
               data-testid="dashboard-signout-btn"
               onClick={onSignOut}
-              className="px-3 py-1.5 rounded-lg border border-rose-200 dark:border-rose-900/50 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+              className="min-h-[44px] sm:min-h-0 px-3 py-1.5 rounded-lg border border-rose-200 dark:border-rose-900/50 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
             >
               <LogOut className="w-3.5 h-3.5" />
-              <span>Çıkış Yap</span>
+              <span className="hidden xs:inline sm:inline">Çıkış Yap</span>
             </button>
           )}
         </div>
@@ -396,6 +411,14 @@ export const PersonalDashboardView: React.FC<PersonalDashboardViewProps> = ({
               </div>
             </div>
           </section>
+
+          {/* Top 5 Models Live Latency & Availability Recharts Tracker (Last 1 Hour) */}
+          <LiveModelTelemetryChart
+            modelMetrics={snapshot.modelMetrics}
+            activeModelId={activeModelId}
+            isDarkTheme={isDarkTheme}
+            onSelectModel={onSelectModel}
+          />
 
           {/* Pinned Workspaces Widget */}
           <section

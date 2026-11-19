@@ -9,8 +9,13 @@ import {
   Check,
   Copy,
   Eye,
+  Globe,
+  LayoutDashboard,
+  MessageSquare,
   MessageSquarePlus,
   QrCode,
+  Search,
+  Settings,
   Share2,
   X,
 } from 'lucide-react';
@@ -100,18 +105,73 @@ import { NotificationCenterModal } from './components/NotificationCenterModal';
 import { CinematicMotionController } from './components/CinematicMotionController';
 import { TrainingConsentBanner } from './components/TrainingConsentBanner';
 
-import { ArgonCodeStudio } from './components/ArgonCodeStudio';
-import { ImagesStudioView } from './components/ImagesStudioView';
-import { SelfEvolutionHub } from './components/SelfEvolutionHub';
-import { CommunitySeoHub, type HubTabId } from './components/CommunitySeoHub';
-import { SocialCalendarWorkspace } from './components/SocialCalendarWorkspace';
-import {
-  LibraryView,
-  ProjectsView,
-} from './components/LibraryAndProjectsView';
-import { SettingsView } from './components/SettingsView';
-import { PersonalDashboardView } from './components/PersonalDashboardView';
+import { retryDynamicImport } from './utils/moduleLoader';
+import type { HubTabId } from './components/CommunitySeoHub';
 import { VoiceCommandModal } from './components/VoiceCommandModal';
+
+const ArgonCodeStudio = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/ArgonCodeStudio').then((m) => ({
+      default: m.ArgonCodeStudio,
+    }))
+  )
+);
+const ImagesStudioView = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/ImagesStudioView').then((m) => ({
+      default: m.ImagesStudioView,
+    }))
+  )
+);
+const SelfEvolutionHub = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/SelfEvolutionHub').then((m) => ({
+      default: m.SelfEvolutionHub,
+    }))
+  )
+);
+const CommunitySeoHub = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/CommunitySeoHub').then((m) => ({
+      default: m.CommunitySeoHub,
+    }))
+  )
+);
+const SocialCalendarWorkspace = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/SocialCalendarWorkspace').then((m) => ({
+      default: m.SocialCalendarWorkspace,
+    }))
+  )
+);
+const LibraryView = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/LibraryAndProjectsView').then((m) => ({
+      default: m.LibraryView,
+    }))
+  )
+);
+const ProjectsView = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/LibraryAndProjectsView').then((m) => ({
+      default: m.ProjectsView,
+    }))
+  )
+);
+const SettingsView = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/SettingsView').then((m) => ({
+      default: m.SettingsView,
+    }))
+  )
+);
+const PersonalDashboardView = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/PersonalDashboardView').then((m) => ({
+      default: m.PersonalDashboardView,
+    }))
+  )
+);
 import {
   createInitialEvolutionState,
   EVOLUTION_LOCAL_CACHE_KEY,
@@ -389,6 +449,11 @@ export default function App() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [compareTriggerCount, setCompareTriggerCount] = useState(0);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [lastCloudSync, setLastCloudSync] = useState<{
+    chatId: string;
+    syncedAt: number;
+  } | null>(null);
+  const cloudSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [settingsSubModal, setSettingsSubModal] = useState<string | null>(null);
   const [cinematicMotion, setCinematicMotion] = useState<CinematicMotionParams>(
     () => ({ ...DEFAULT_CINEMATIC_MOTION })
@@ -638,8 +703,29 @@ export default function App() {
       }
     };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      if (cloudSyncTimerRef.current) {
+        clearTimeout(cloudSyncTimerRef.current);
+      }
+    };
   }, []);
+
+  const persistChatAndTrackSync = async (thread: ChatThread) => {
+    try {
+      const synced = await saveChatToFirestore(thread);
+      if (!synced) return;
+      setLastCloudSync({ chatId: thread.id, syncedAt: Date.now() });
+      if (cloudSyncTimerRef.current) {
+        clearTimeout(cloudSyncTimerRef.current);
+      }
+      cloudSyncTimerRef.current = setTimeout(() => {
+        setLastCloudSync(null);
+      }, 3200);
+    } catch {
+      // Firestore errors are handled inside firebase helper
+    }
+  };
 
   useEffect(() => {
     let unsubChats: (() => void) | null = null;
@@ -1556,7 +1642,7 @@ export default function App() {
             collab.broadcastChatMessage(finalVideoMsg);
             setIsStreaming(false);
             if (!user.isGuest && targetChatId) {
-              saveChatToFirestore({
+              void persistChatAndTrackSync({
                 id: targetChatId,
                 title: resolvedTitle,
                 modelId: activeModelId,
@@ -1574,7 +1660,7 @@ export default function App() {
                     ...(resolvedPosterUrl ? { posterUrl: resolvedPosterUrl } : {}),
                   },
                 ],
-              }).catch(() => {});
+              });
             }
             return;
           }
@@ -1653,7 +1739,7 @@ export default function App() {
             collab.broadcastChatMessage(finalImageMsg);
             setIsStreaming(false);
             if (!user.isGuest && targetChatId) {
-              saveChatToFirestore({
+              void persistChatAndTrackSync({
                 id: targetChatId,
                 title: resolvedTitle,
                 modelId: activeModelId,
@@ -1670,7 +1756,7 @@ export default function App() {
                     imageUrl: imgData.dataUrl,
                   },
                 ],
-              }).catch(() => {});
+              });
             }
             return;
           }
@@ -1908,7 +1994,7 @@ export default function App() {
             },
           ],
         };
-        saveChatToFirestore(completedThread).catch(() => {});
+        void persistChatAndTrackSync(completedThread);
       }
       if (cleanUserText && finalAssistantText) {
         submitConsentedChatSignal(
@@ -2245,14 +2331,14 @@ export default function App() {
       collab.broadcastChatMessage(completedCompareMsg);
 
       if (!user.isGuest && targetChatId) {
-        saveChatToFirestore({
+        void persistChatAndTrackSync({
           id: targetChatId,
           title: resolvedTitle,
           modelId: modelA,
           createdAt: Date.now(),
           updatedAt: Date.now(),
           messages: [...updatedMessages, completedCompareMsg],
-        }).catch(() => {});
+        });
       }
     }
   };
@@ -2661,6 +2747,9 @@ export default function App() {
             onTypingActivity={(isTyping) =>
               collab.updatePresence({ isTyping })
             }
+            cloudSyncVisible={Boolean(
+              lastCloudSync && activeChatId && lastCloudSync.chatId === activeChatId
+            )}
             user={user}
             isStreaming={isStreaming}
           />
@@ -2752,6 +2841,7 @@ export default function App() {
                 );
               }}
               onOpenVoiceCommands={() => setIsVoiceCommandModalOpen(true)}
+              onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
               onOpenAuthModal={() => setIsAuthModalOpen(true)}
               onSignOut={handleSignOut}
             />
@@ -3116,6 +3206,7 @@ export default function App() {
           chats={chats}
           libraryItems={libraryItems}
           projects={projects}
+          studioArticles={studioArticles}
           onSelectModel={(modelId) => {
             setActiveModelId(modelId);
             setCurrentView('chat');
@@ -3132,13 +3223,17 @@ export default function App() {
           onOpenModelMetrics={() => handleOpenDashboard('model-metrics')}
           onOpenVoiceCommands={() => setIsVoiceCommandModalOpen(true)}
           onOpenEvolution={() => setCurrentView('evolution')}
-          onOpenHub={() => {
-            setHubInitialTab(undefined);
+          onOpenHub={(tab) => {
+            setHubInitialTab(tab);
             setCurrentView('hub');
           }}
           onOpenContentStudio={() => {
             setHubInitialTab('content-studio');
             setCurrentView('hub');
+          }}
+          onOpenGithubSettings={() => {
+            setSettingsSubModal('github');
+            setCurrentView('settings');
           }}
           onOpenSocial={() => setCurrentView('social')}
           onOpenCollab={() => setIsCollabPanelOpen(true)}
@@ -3222,6 +3317,90 @@ export default function App() {
           />
         )}
       </div>
+
+      {currentView !== 'welcome' && (
+        <nav
+          data-testid="mobile-bottom-nav"
+          aria-label="Mobil Alt Gezinme Çubuğu"
+          className="md:hidden shrink-0 h-14 bg-white dark:bg-[#18191d] border-t border-neutral-200 dark:border-neutral-800 grid grid-cols-5 items-center px-1 z-30"
+        >
+          <button
+            type="button"
+            data-testid="mobile-nav-chat-btn"
+            onClick={() => setCurrentView('chat')}
+            className={`min-h-[44px] h-full flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition cursor-pointer ${
+              currentView === 'chat'
+                ? 'text-blue-600 dark:text-blue-400'
+                : 'text-neutral-500 dark:text-neutral-400'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4" />
+            <span>Sohbet</span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="mobile-nav-search-btn"
+            onClick={() => setIsCommandPaletteOpen(true)}
+            className={`min-h-[44px] h-full flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition cursor-pointer ${
+              isCommandPaletteOpen
+                ? 'text-blue-600 dark:text-blue-400'
+                : 'text-neutral-500 dark:text-neutral-400'
+            }`}
+          >
+            <Search className="w-4 h-4" />
+            <span>Ara</span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="mobile-nav-hub-btn"
+            onClick={() => {
+              setHubInitialTab('blog-polls');
+              setCurrentView('hub');
+            }}
+            className={`min-h-[44px] h-full flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition cursor-pointer ${
+              currentView === 'hub'
+                ? 'text-blue-600 dark:text-blue-400'
+                : 'text-neutral-500 dark:text-neutral-400'
+            }`}
+          >
+            <Globe className="w-4 h-4" />
+            <span>Topluluk</span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="mobile-nav-dashboard-btn"
+            onClick={() => handleOpenDashboard('overview')}
+            className={`min-h-[44px] h-full flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition cursor-pointer ${
+              currentView === 'dashboard'
+                ? 'text-blue-600 dark:text-blue-400'
+                : 'text-neutral-500 dark:text-neutral-400'
+            }`}
+          >
+            <LayoutDashboard className="w-4 h-4" />
+            <span>Panel</span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="mobile-nav-settings-btn"
+            onClick={() => {
+              setSettingsSubModal(null);
+              setCurrentView('settings');
+            }}
+            className={`min-h-[44px] h-full flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition cursor-pointer ${
+              currentView === 'settings'
+                ? 'text-blue-600 dark:text-blue-400'
+                : 'text-neutral-500 dark:text-neutral-400'
+            }`}
+          >
+            <Settings className="w-4 h-4" />
+            <span>Ayarlar</span>
+          </button>
+        </nav>
+      )}
     </div>
   );
 }

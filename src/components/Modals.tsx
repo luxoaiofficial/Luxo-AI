@@ -43,6 +43,12 @@ import {
   sanitizeLuxoBrand,
   validateUnlockCode,
 } from '../utils/luxoLogic';
+import {
+  DEFAULT_WAVE_BAR_COUNT,
+  getIdleWaveLevels,
+  normalizeFrequencyLevels,
+  synthesizeSpeakingWaveLevels,
+} from '../utils/audioWaveEngine';
 import { LuxoLogo } from './LuxoLogo';
 import { SocialShareButton } from './SocialShareBar';
 
@@ -1411,11 +1417,18 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
   const [typedVoiceInput, setTypedVoiceInput] = useState('');
   const [history, setHistory] = useState<VoiceTurn[]>([]);
   const [lastWavDataUrl, setLastWavDataUrl] = useState<string | null>(null);
+  const [waveLevels, setWaveLevels] = useState<number[]>(() =>
+    getIdleWaveLevels(DEFAULT_WAVE_BAR_COUNT)
+  );
 
   const recRef = useRef<{ stop: () => void; start: () => void } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const ambientCtxRef = useRef<AudioContext | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const micAudioCtxRef = useRef<AudioContext | null>(null);
+  const freqDataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const stateRef = useRef({
     isListening: false,
     isSpeaking: false,
@@ -1428,6 +1441,120 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
     isSpeaking,
     accent: activeVoice.accentColor,
   };
+
+  // Real-time microphone AnalyserNode capture for live vocal wave visualization
+  useEffect(() => {
+    const cleanupMicAnalyser = () => {
+      analyserRef.current = null;
+      freqDataRef.current = null;
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach((track) => track.stop());
+        micStreamRef.current = null;
+      }
+      if (micAudioCtxRef.current) {
+        micAudioCtxRef.current.close().catch(() => {});
+        micAudioCtxRef.current = null;
+      }
+    };
+
+    if (!isOpen || !isListening || studioMode !== 'live') {
+      cleanupMicAnalyser();
+      return;
+    }
+
+    let cancelled = false;
+    const attachMicrophoneAnalyser = async () => {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          return;
+        }
+        const AudioCtx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext?: typeof AudioContext })
+            .webkitAudioContext;
+        if (!AudioCtx) return;
+
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        const ctx = new AudioCtx();
+        if (ctx.state === 'suspended') {
+          await ctx.resume().catch(() => {});
+        }
+        const source = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 64;
+        analyser.smoothingTimeConstant = 0.78;
+        source.connect(analyser);
+
+        micStreamRef.current = stream;
+        micAudioCtxRef.current = ctx;
+        analyserRef.current = analyser;
+        freqDataRef.current = new Uint8Array(
+          new ArrayBuffer(analyser.frequencyBinCount)
+        );
+      } catch {
+        // Fallback to multi-harmonic live listening animation when mic device is blocked/unavailable
+      }
+    };
+
+    void attachMicrophoneAnalyser();
+
+    return () => {
+      cancelled = true;
+      cleanupMicAnalyser();
+    };
+  }, [isOpen, isListening, studioMode]);
+
+  // Smooth frame-throttled waveform bar updates while user is speaking or AI speaks
+  useEffect(() => {
+    if (!isOpen || (!isListening && !isSpeaking)) {
+      setWaveLevels(getIdleWaveLevels(DEFAULT_WAVE_BAR_COUNT));
+      return;
+    }
+
+    let rafId = 0;
+    let lastTick = 0;
+    let phase = 0;
+
+    const stepWaveform = (ts: number) => {
+      if (ts - lastTick >= 36) {
+        lastTick = ts;
+        phase += isSpeaking ? 0.34 : 0.28;
+
+        const analyser = analyserRef.current;
+        const bins = freqDataRef.current;
+        if (isListening && analyser && bins) {
+          analyser.getByteFrequencyData(bins);
+          let energySum = 0;
+          for (let i = 0; i < bins.length; i++) energySum += bins[i];
+          if (energySum > 45) {
+            setWaveLevels(
+              normalizeFrequencyLevels(bins, DEFAULT_WAVE_BAR_COUNT)
+            );
+          } else {
+            setWaveLevels(
+              synthesizeSpeakingWaveLevels(phase, DEFAULT_WAVE_BAR_COUNT, 0.56)
+            );
+          }
+        } else {
+          setWaveLevels(
+            synthesizeSpeakingWaveLevels(
+              phase,
+              DEFAULT_WAVE_BAR_COUNT,
+              isSpeaking ? 0.9 : 0.72
+            )
+          );
+        }
+      }
+      rafId = requestAnimationFrame(stepWaveform);
+    };
+
+    rafId = requestAnimationFrame(stepWaveform);
+    return () => cancelAnimationFrame(rafId);
+  }, [isOpen, isListening, isSpeaking]);
 
   // Ambient WebAudio studio soundscape
   useEffect(() => {
@@ -1968,6 +2095,47 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
             }}
           >
             <LuxoLogo className="w-9 h-9 text-white" size={36} />
+          </div>
+        </div>
+
+        {/* Real-time Audio Waveform Bar Strip */}
+        <div
+          data-testid="voice-modal-waveform"
+          data-active={isListening || isSpeaking ? 'true' : 'false'}
+          aria-label={
+            isListening
+              ? 'Canlı mikrofon ses dalgası'
+              : isSpeaking
+              ? 'Nöral ses çıkış dalgası'
+              : 'Ses dalgası beklemede'
+          }
+          className="w-full max-w-xs sm:max-w-sm px-4 py-2 mb-2.5 rounded-2xl bg-white/6 border border-white/10 flex flex-col items-center gap-1.5"
+        >
+          <div className="w-full h-10 flex items-center justify-center gap-1">
+            {waveLevels.map((level, idx) => (
+              <span
+                key={idx}
+                data-testid={`voice-wave-bar-${idx}`}
+                className={`w-1 sm:w-1.5 h-full rounded-full origin-center transition-transform duration-75 will-change-transform ${
+                  isListening
+                    ? 'bg-sky-400'
+                    : isSpeaking
+                    ? 'bg-emerald-400'
+                    : 'bg-white/25'
+                }`}
+                style={{
+                  transform: `scaleY(${level})`,
+                  opacity: isListening || isSpeaking ? 0.65 + level * 0.35 : 0.4,
+                }}
+              />
+            ))}
+          </div>
+          <div className="text-[10px] font-mono tracking-wide text-neutral-300 tabular-nums">
+            {isListening
+              ? 'MİKROFON CANLI · SES DALGASI AKTİF'
+              : isSpeaking
+              ? 'NÖRAL SES ÇIKIŞI · DALGA FORMU'
+              : 'SES DALGASI HAZIR · KONUŞMA BEKLENİYOR'}
           </div>
         </div>
 

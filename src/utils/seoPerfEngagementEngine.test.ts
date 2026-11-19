@@ -5,6 +5,7 @@ import {
   addForumReply,
   BLOG_ARTICLES,
   calculateWebPerfProjection,
+  createCommunityPoll,
   createForumThread,
   createInitialCommunityState,
   ENGAGEMENT_INTEGRATION_BLUEPRINTS,
@@ -12,9 +13,11 @@ import {
   FOUR_PILLAR_SITE_AUDIT,
   generateRobotsTxt,
   generateSitemapXml,
+  getQuizMasteryBadge,
   gradeQuizAnswers,
   moderateArticleComment,
   reactToArticle,
+  recordCommunityEngagementAction,
   replyArticleComment,
   scorePageMetaTags,
   SEO_CONTENT_BLUEPRINTS,
@@ -140,6 +143,36 @@ test('Forum thread creation validates inputs, redacts PII, and supports upvotes,
   const graded = gradeQuizAnswers(allCorrect);
   assert.equal(graded.scorePct, 100);
   assert.equal(graded.correctCount, ENGAGEMENT_QUIZ_QUESTIONS.length);
+  assert.equal(getQuizMasteryBadge(graded.scorePct).tier, 'gold');
+});
+
+test('createCommunityPoll validates options, redacts PII, and recordCommunityEngagementAction tracks daily streak', () => {
+  const base = createInitialCommunityState(1_700_000_000_000);
+  const badPoll = createCommunityPoll(base, {
+    question: 'Kısa?',
+    options: ['Evet'],
+  });
+  assert.equal(badPoll.created, null);
+  assert.ok(badPoll.error);
+
+  const goodPoll = createCommunityPoll(base, {
+    question: 'Hangi mobil iyileştirme sizin için daha değerli? İletişim test@example.com',
+    category: 'Mobil Deneyim',
+    options: ['Alt Gezinme Çubuğu', 'Hızlı Arama', 'Alt Gezinme Çubuğu'],
+    now: 1_700_000_050_000,
+  });
+  assert.ok(goodPoll.created);
+  assert.equal(goodPoll.created!.options.length, 2);
+  assert.ok(!goodPoll.created!.question.includes('test@example.com'));
+  assert.equal(goodPoll.state.polls[0].id, goodPoll.created!.id);
+
+  const day1 = recordCommunityEngagementAction(null, Date.UTC(2026, 10, 10, 10, 0), 1);
+  assert.equal(day1.streakDays, 1);
+  assert.equal(day1.actionsCount, 1);
+
+  const day2 = recordCommunityEngagementAction(day1, Date.UTC(2026, 10, 11, 12, 0), 2);
+  assert.equal(day2.streakDays, 2);
+  assert.equal(day2.actionsCount, 3);
 });
 
 test('Four-pillar audit, target audience segments, SEO content blueprints, and article comment/reaction reducers are valid', () => {

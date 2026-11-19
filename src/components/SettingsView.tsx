@@ -15,6 +15,7 @@ import {
   Database,
   Download,
   ExternalLink,
+  GitBranch,
   Globe,
   Grid3x3,
   HardDrive,
@@ -28,6 +29,7 @@ import {
   Pen,
   QrCode,
   RefreshCw,
+  Rocket,
   Search,
   Shield,
   ShieldCheck,
@@ -37,6 +39,7 @@ import {
   Sparkles,
   Star,
   Sun,
+  Terminal,
   ToggleLeft,
   ToggleRight,
   Trash2,
@@ -52,6 +55,12 @@ import {
   LUXO_VOICES,
   sanitizeLuxoBrand,
 } from '../utils/luxoLogic';
+import {
+  buildGithubPushCommands,
+  GITHUB_REPO_STORAGE_KEY,
+  parseAndValidateGithubRepoUrl,
+  PROJECT_GITHUB_PIPELINE,
+} from '../utils/githubInfo';
 import { LuxoLogo } from './LuxoLogo';
 
 interface SettingsViewProps {
@@ -166,8 +175,84 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [copiedDirectLink, setCopiedDirectLink] = useState(false);
   const [showDirectQrModal, setShowDirectQrModal] = useState(false);
   const [directQrDataUrl, setDirectQrDataUrl] = useState('');
+  const [savedGithubRepo, setSavedGithubRepo] = useState<string>(() => {
+    try {
+      const raw = localStorage.getItem(GITHUB_REPO_STORAGE_KEY) || '';
+      const parsed = parseAndValidateGithubRepoUrl(raw);
+      return parsed.valid && parsed.canonicalUrl ? parsed.canonicalUrl : '';
+    } catch {
+      return '';
+    }
+  });
+  const [githubRepoInput, setGithubRepoInput] = useState<string>(() => {
+    try {
+      return localStorage.getItem(GITHUB_REPO_STORAGE_KEY) || '';
+    } catch {
+      return '';
+    }
+  });
+  const [githubRepoError, setGithubRepoError] = useState<string | null>(null);
+  const [copiedGitCmd, setCopiedGitCmd] = useState(false);
   const STANDALONE_DIRECT_URL =
     'https://ais-pre-fudupxh6ld5rvvbfz5qwt4-705459740809.europe-west2.run.app/';
+
+  useEffect(() => {
+    if (initialSubModal !== undefined) {
+      setSubView(initialSubModal);
+    }
+  }, [initialSubModal]);
+
+  const parsedSavedGithubRepo = savedGithubRepo
+    ? parseAndValidateGithubRepoUrl(savedGithubRepo)
+    : null;
+
+  const handleSaveGithubRepo = (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = parseAndValidateGithubRepoUrl(githubRepoInput);
+    if (!res.valid || !res.canonicalUrl) {
+      setGithubRepoError(res.error || 'Geçersiz GitHub depo adresi.');
+      return;
+    }
+    setGithubRepoError(null);
+    setSavedGithubRepo(res.canonicalUrl);
+    setGithubRepoInput(res.canonicalUrl);
+    try {
+      localStorage.setItem(GITHUB_REPO_STORAGE_KEY, res.canonicalUrl);
+    } catch {
+      // ignore storage quota errors
+    }
+    showToast('GitHub depo bağlantısı kaydedildi.');
+  };
+
+  const handleClearGithubRepo = () => {
+    setSavedGithubRepo('');
+    setGithubRepoInput('');
+    setGithubRepoError(null);
+    try {
+      localStorage.removeItem(GITHUB_REPO_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    showToast('GitHub depo bağlantısı temizlendi.');
+  };
+
+  const handleCopyTextSafe = (txt: string, onSuccess: () => void) => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(txt).catch(() => {});
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = txt;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+    } catch {
+      // ignore
+    }
+    onSuccess();
+  };
 
   useEffect(() => {
     if (showDirectQrModal) {
@@ -1507,11 +1592,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   if (subView) {
     return (
       <div className="flex flex-col h-full bg-[#f8f8f8] dark:bg-[#000000] text-neutral-900 dark:text-neutral-100 select-none relative overflow-hidden">
+        {toast && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-neutral-900 text-white text-xs font-semibold rounded-full shadow-lg">
+            {toast}
+          </div>
+        )}
         <header className="flex items-center justify-between px-4 py-3 bg-white dark:bg-[#000000] border-b border-neutral-200/60 dark:border-neutral-900 shrink-0">
           <button
             type="button"
             onClick={() => setSubView(null)}
-            className="w-10 h-10 rounded-full bg-white dark:bg-[#18181b] border border-neutral-200 dark:border-neutral-800 flex items-center justify-center shadow-xs hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
+            className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white dark:bg-[#18181b] border border-neutral-200 dark:border-neutral-800 flex items-center justify-center shadow-xs hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
             aria-label="Geri Dön"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -1523,12 +1613,206 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               ? 'Güvenlik ve esenlik'
               : subView === 'ads'
               ? 'Reklam denetimleri'
+              : subView === 'github'
+              ? 'GitHub & CI/CD Bilgileri'
               : 'Hakkında'}
           </h2>
-          <div className="w-10" />
+          <div className="w-11 sm:w-10" />
         </header>
 
         <div className="flex-1 overflow-y-auto px-4 py-6 max-w-xl mx-auto w-full space-y-4">
+          {subView === 'github' && (
+            <div data-testid="settings-github-subview" className="space-y-4 pb-8">
+              <div className="bg-white dark:bg-[#18181b] rounded-3xl border border-neutral-200/80 dark:border-neutral-800 p-5 shadow-xs space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 flex items-center justify-center shrink-0">
+                    <GitBranch className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
+                      GitHub Actions &amp; Otomatik Yayınlama
+                    </h3>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      GitHub Pages, Netlify ve Render için hazır CI/CD yapılandırması
+                    </p>
+                  </div>
+                </div>
+
+                <div className="divide-y divide-neutral-100 dark:divide-neutral-800 border-t border-b border-neutral-100 dark:border-neutral-800 text-xs">
+                  <div className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-3">
+                    <span className="text-neutral-500 dark:text-neutral-400 shrink-0">Workflow Dosyası</span>
+                    <span className="font-mono font-semibold text-neutral-900 dark:text-white break-all sm:text-right">
+                      {PROJECT_GITHUB_PIPELINE.workflowPath}
+                    </span>
+                  </div>
+                  <div className="py-2.5 flex items-center justify-between gap-3">
+                    <span className="text-neutral-500 dark:text-neutral-400">Tetikleyici Dal &amp; Node</span>
+                    <span className="font-mono font-semibold text-neutral-900 dark:text-white tabular-nums">
+                      {PROJECT_GITHUB_PIPELINE.triggerBranch} · Node {PROJECT_GITHUB_PIPELINE.nodeVersion}
+                    </span>
+                  </div>
+                  <div className="py-2.5 flex items-center justify-between gap-3">
+                    <span className="text-neutral-500 dark:text-neutral-400">Statik Derleme</span>
+                    <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                      {PROJECT_GITHUB_PIPELINE.lintCommand} → {PROJECT_GITHUB_PIPELINE.buildOutputDir}/
+                    </span>
+                  </div>
+                  <div className="py-2.5 flex items-center justify-between gap-3">
+                    <span className="text-neutral-500 dark:text-neutral-400">Tam Sunucu Modu</span>
+                    <span className="font-mono font-semibold text-neutral-900 dark:text-white">
+                      {PROJECT_GITHUB_PIPELINE.fullstackStartCommand} (server.ts)
+                    </span>
+                  </div>
+                  <div className="py-2.5 flex items-center justify-between gap-3">
+                    <span className="text-neutral-500 dark:text-neutral-400">Açık Kaynak Lisansı</span>
+                    <span className="font-semibold text-neutral-900 dark:text-white">
+                      {PROJECT_GITHUB_PIPELINE.license}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-[#18181b] rounded-3xl border border-neutral-200/80 dark:border-neutral-800 p-5 shadow-xs space-y-3.5">
+                <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
+                  Kendi GitHub Deponuzu Bağlayın
+                </h3>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  Depo adresinizi (<span className="font-mono">kullanici/luxo-ai</span> veya{' '}
+                  <span className="font-mono">https://github.com/...</span>) kaydedin; canlı GitHub Pages bağlantısı ve git push komutları otomatik oluşsun.
+                </p>
+
+                <form onSubmit={handleSaveGithubRepo} className="space-y-2.5">
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      value={githubRepoInput}
+                      onChange={(e) => {
+                        setGithubRepoInput(e.target.value);
+                        if (githubRepoError) setGithubRepoError(null);
+                      }}
+                      data-testid="github-repo-input"
+                      aria-label="GitHub Depo Bağlantısı"
+                      placeholder="https://github.com/kullanici-adi/luxo-ai"
+                      className="flex-1 min-h-[44px] px-3.5 py-2.5 rounded-2xl bg-neutral-50 dark:bg-[#111216] border border-neutral-200 dark:border-neutral-700 text-xs font-mono text-neutral-900 dark:text-white focus:outline-hidden focus:border-blue-500"
+                    />
+                    <button
+                      type="submit"
+                      data-testid="save-github-repo-btn"
+                      className="min-h-[44px] px-4 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition cursor-pointer whitespace-nowrap"
+                    >
+                      Depoyu Kaydet
+                    </button>
+                  </div>
+                  {githubRepoError && (
+                    <p
+                      role="alert"
+                      data-testid="github-repo-error"
+                      className="text-xs font-medium text-rose-600 dark:text-rose-400"
+                    >
+                      {githubRepoError}
+                    </p>
+                  )}
+                </form>
+
+                {parsedSavedGithubRepo?.valid && parsedSavedGithubRepo.canonicalUrl && (
+                  <div
+                    data-testid="saved-github-repo-card"
+                    className="p-3.5 rounded-2xl bg-emerald-500/8 dark:bg-emerald-950/30 border border-emerald-500/30 space-y-2.5 text-xs"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-emerald-700 dark:text-emerald-300">
+                        Bağlı Depo: {parsedSavedGithubRepo.owner}/{parsedSavedGithubRepo.repo}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleClearGithubRepo}
+                        className="text-[11px] font-semibold text-neutral-500 hover:text-rose-600 cursor-pointer"
+                      >
+                        Kaldır
+                      </button>
+                    </div>
+                    {parsedSavedGithubRepo.pagesUrl && (
+                      <div className="text-[11px] font-mono text-neutral-600 dark:text-neutral-300 break-all">
+                        GitHub Pages Adresi: {parsedSavedGithubRepo.pagesUrl}
+                      </div>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <a
+                        href={parsedSavedGithubRepo.canonicalUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="min-h-[40px] px-3 py-1.5 rounded-xl bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 font-semibold text-xs inline-flex items-center gap-1.5"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>GitHub&apos;da Aç</span>
+                      </a>
+                      {parsedSavedGithubRepo.pagesUrl && (
+                        <a
+                          href={parsedSavedGithubRepo.pagesUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="min-h-[40px] px-3 py-1.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-[#18181b] text-neutral-800 dark:text-neutral-200 font-semibold text-xs inline-flex items-center gap-1.5"
+                        >
+                          <Rocket className="w-3.5 h-3.5 text-blue-500" />
+                          <span>Pages Sitesini Aç</span>
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-white dark:bg-[#18181b] rounded-3xl border border-neutral-200/80 dark:border-neutral-800 p-5 shadow-xs space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-sm font-bold text-neutral-900 dark:text-white">
+                    <Terminal className="w-4 h-4 text-indigo-500" />
+                    <span>Hızlı Git Push Komutları</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleCopyTextSafe(
+                        buildGithubPushCommands(savedGithubRepo),
+                        () => {
+                          setCopiedGitCmd(true);
+                          showToast('Git push komutları kopyalandı!');
+                          setTimeout(() => setCopiedGitCmd(false), 2000);
+                        }
+                      )
+                    }
+                    className="min-h-[38px] px-3 py-1.5 rounded-xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {copiedGitCmd ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-500" />
+                        <span>Kopyalandı</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Kopyala</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <pre className="p-3.5 rounded-2xl bg-neutral-950 text-neutral-100 text-[11px] font-mono overflow-x-auto leading-relaxed">
+                  {buildGithubPushCommands(savedGithubRepo)}
+                </pre>
+                <div className="space-y-2 pt-1">
+                  {PROJECT_GITHUB_PIPELINE.repositorySetupSteps.map((st) => (
+                    <div key={st.step} className="text-xs text-neutral-600 dark:text-neutral-300">
+                      <span className="font-bold text-neutral-900 dark:text-white">
+                        {st.step}. {st.title}:
+                      </span>{' '}
+                      {st.detail}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {subView !== 'github' && (
           <div className="bg-white dark:bg-[#18181b] rounded-3xl border border-neutral-200/80 dark:border-neutral-800 p-5 shadow-xs space-y-4">
             {subView === 'safety' && (
               <div className="flex items-center justify-between">
@@ -1626,7 +1910,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             )}
 
             {subView === 'about' && (
-              <div className="space-y-2.5 text-xs text-neutral-600 dark:text-neutral-300 leading-relaxed">
+              <div className="space-y-3 text-xs text-neutral-600 dark:text-neutral-300 leading-relaxed">
                 <div className="flex items-center gap-2 text-sm font-bold text-neutral-900 dark:text-white">
                   <LuxoLogo
                     className="w-5 h-5 text-black dark:text-white"
@@ -1637,9 +1921,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <p>
                   {LUXO_MODEL_IDS.length} yapay zeka modeli (Gemini 4 Hydrogen, Gemini 4 Argon, ChatGPT-5.2 Pro, Claude 4.6 Opus, DeepSeek R2, Grok 4, Nano Banana 4K ve Google Veo 3 dahil), MIT lisanslı Açık Kaynak Argon Kod Stüdyosu, 10 sesli Canlı Ses Stüdyosu ve Firebase bulut senkronizasyonu ile güçlendirilmiştir.
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setSubView('github')}
+                  className="min-h-[44px] w-full px-4 py-2.5 rounded-2xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-900 dark:text-white font-semibold flex items-center justify-between transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <GitBranch className="w-4 h-4 text-indigo-500" />
+                    <span>GitHub Actions &amp; Depo Bilgilerini Aç</span>
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-neutral-400" />
+                </button>
               </div>
             )}
           </div>
+          )}
         </div>
       </div>
     );
@@ -1657,13 +1953,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <button
           type="button"
           onClick={onBack}
-          className="w-10 h-10 rounded-full bg-white dark:bg-[#18181b] border border-neutral-200 dark:border-neutral-800 flex items-center justify-center shadow-xs hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
+          className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white dark:bg-[#18181b] border border-neutral-200 dark:border-neutral-800 flex items-center justify-center shadow-xs hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
           aria-label="Geri Dön"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
         <h2 className="text-base font-bold tracking-tight">Ayarlar</h2>
-        <div className="w-10" />
+        <div className="w-11 sm:w-10" />
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6 pb-24 max-w-xl mx-auto w-full">
@@ -2308,11 +2604,44 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </button>
             )}
 
+            {(matchesSearch('GitHub') ||
+              matchesSearch('CI/CD') ||
+              matchesSearch('Depo') ||
+              matchesSearch('Workflow') ||
+              matchesSearch('Pages')) && (
+              <button
+                type="button"
+                data-testid="settings-nav-github-btn"
+                onClick={() => setSubView('github')}
+                className="w-full min-h-[56px] flex items-center justify-between p-4 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition cursor-pointer text-left"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <GitBranch className="w-5 h-5 text-indigo-500 shrink-0" />
+                  <div className="min-w-0">
+                    <span className="text-sm font-medium block truncate">
+                      GitHub &amp; CI/CD Yayınlama Bilgileri
+                    </span>
+                    <span className="text-[11px] text-neutral-400 block truncate">
+                      {parsedSavedGithubRepo?.valid
+                        ? `${parsedSavedGithubRepo.owner}/${parsedSavedGithubRepo.repo} · Actions Hazır`
+                        : 'Workflow (.github/workflows), repo bağlantısı & push komutları'}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-xs font-mono text-neutral-400">
+                    Actions
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-neutral-400" />
+                </div>
+              </button>
+            )}
+
             {matchesSearch('Hakkında') && (
               <button
                 type="button"
                 onClick={() => setSubView('about')}
-                className="w-full flex items-center justify-between p-4 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition cursor-pointer text-left"
+                className="w-full min-h-[52px] flex items-center justify-between p-4 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition cursor-pointer text-left"
               >
                 <div className="flex items-center gap-3.5">
                   <Info className="w-5 h-5 text-neutral-700 dark:text-neutral-300" />

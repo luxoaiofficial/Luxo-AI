@@ -1558,6 +1558,71 @@ export function voteInPoll(
   };
 }
 
+export function createCommunityPoll(
+  state: CommunityHubState,
+  input: {
+    question: string;
+    category?: string;
+    options: string[];
+    now?: number;
+  }
+): { state: CommunityHubState; created: CommunityPoll | null; error?: string } {
+  const now = input.now ?? Date.now();
+  const cleanQuestion = redactSensitivePii((input.question || '').trim()).slice(0, 140);
+  if (cleanQuestion.length < 8) {
+    return {
+      state,
+      created: null,
+      error: 'Anket sorusu en az 8 karakter olmalıdır.',
+    };
+  }
+
+  const seenLabels = new Set<string>();
+  const cleanOptions: PollOption[] = [];
+  for (let i = 0; i < (input.options || []).length; i++) {
+    const raw = redactSensitivePii((input.options[i] || '').trim()).slice(0, 80);
+    if (raw.length < 2) continue;
+    const key = raw.toLowerCase();
+    if (seenLabels.has(key)) continue;
+    seenLabels.add(key);
+    cleanOptions.push({
+      id: `opt-${now.toString(36)}-${i}`,
+      label: raw,
+      votes: 0,
+    });
+    if (cleanOptions.length >= 5) break;
+  }
+
+  if (cleanOptions.length < 2) {
+    return {
+      state,
+      created: null,
+      error: 'En az 2 benzersiz anket seçeneği girmelisiniz.',
+    };
+  }
+
+  const cleanCategory = redactSensitivePii(
+    (input.category || 'Topluluk Anketi').trim() || 'Topluluk Anketi'
+  ).slice(0, 40);
+
+  const created: CommunityPoll = {
+    id: `poll-${now.toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    question: cleanQuestion,
+    category: cleanCategory,
+    totalVotes: 0,
+    options: cleanOptions,
+  };
+
+  return {
+    created,
+    state: {
+      ...state,
+      updatedAt: now,
+      polls: [created, ...state.polls].slice(0, 20),
+    },
+  };
+}
+
 export function gradeQuizAnswers(
   selectedByQuestionId: Record<string, number>
 ): {
@@ -1574,5 +1639,69 @@ export function gradeQuizAnswers(
   }
   const scorePct = Math.round((correctCount / Math.max(1, totalQuestions)) * 100);
   return { correctCount, totalQuestions, scorePct };
+}
+
+export function getQuizMasteryBadge(scorePct: number): {
+  title: string;
+  tier: 'gold' | 'silver' | 'starter';
+  summary: string;
+} {
+  if (scorePct >= 100) {
+    return {
+      title: 'Mühendislik Ustası (Tam Puan)',
+      tier: 'gold',
+      summary: 'Teknik SEO, HTTP önbellekleme ve Core Web Vitals sorularının tamamını bildiniz.',
+    };
+  }
+  if (scorePct >= 50) {
+    return {
+      title: 'Gelişen Stratejist',
+      tier: 'silver',
+      summary: 'Temel performans kavramlarına hakimsiniz; açıklamaları inceleyerek %100 puana ulaşabilirsiniz.',
+    };
+  }
+  return {
+    title: 'Yeni Başlayan Kaşif',
+    tier: 'starter',
+    summary: 'Yanıtların altındaki mühendislik notlarını okuyup testi tekrar çözebilirsiniz.',
+  };
+}
+
+export interface CommunityEngagementStats {
+  actionsCount: number;
+  streakDays: number;
+  lastVisitDayIso: string;
+}
+
+export const COMMUNITY_ENGAGEMENT_STORAGE_KEY = 'luxo_community_engagement_stats';
+
+export function recordCommunityEngagementAction(
+  current: CommunityEngagementStats | null | undefined,
+  now = Date.now(),
+  incrementAction = 1
+): CommunityEngagementStats {
+  const todayIso = new Date(now).toISOString().slice(0, 10);
+  const yesterdayIso = new Date(now - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  if (!current || !current.lastVisitDayIso) {
+    return {
+      actionsCount: Math.max(0, incrementAction),
+      streakDays: 1,
+      lastVisitDayIso: todayIso,
+    };
+  }
+
+  let nextStreak = Math.max(1, current.streakDays || 1);
+  if (current.lastVisitDayIso === yesterdayIso) {
+    nextStreak += 1;
+  } else if (current.lastVisitDayIso !== todayIso) {
+    nextStreak = 1;
+  }
+
+  return {
+    actionsCount: Math.max(0, (current.actionsCount || 0) + incrementAction),
+    streakDays: nextStreak,
+    lastVisitDayIso: todayIso,
+  };
 }
 

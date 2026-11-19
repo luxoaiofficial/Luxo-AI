@@ -473,8 +473,8 @@ export async function updateUserProfileInFirestore(
   }
 }
 
-export async function saveChatToFirestore(chat: ChatThread): Promise<void> {
-  if (!auth.currentUser || !auth.currentUser.emailVerified) return;
+export async function saveChatToFirestore(chat: ChatThread): Promise<boolean> {
+  if (!auth.currentUser || !auth.currentUser.emailVerified) return false;
   const uid = await ensureParentUserDocReady(auth.currentUser);
   const chatId = sanitizeSafeId(chat.id);
   const path = `users/${uid}/chats/${chatId}`;
@@ -529,6 +529,7 @@ export async function saveChatToFirestore(chat: ChatThread): Promise<void> {
         updatedAt: serverTimestamp(),
       });
     }
+    return true;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }

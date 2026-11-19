@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
+  Award,
   BarChart3,
   Check,
   ChevronDown,
@@ -9,6 +10,7 @@ import {
   Copy,
   ExternalLink,
   FileCode2,
+  Flame,
   Gauge,
   Globe,
   HelpCircle,
@@ -33,8 +35,11 @@ import {
   addForumReply,
   BLOG_ARTICLES,
   calculateWebPerfProjection,
+  COMMUNITY_ENGAGEMENT_STORAGE_KEY,
+  CommunityEngagementStats,
   CommunityHubState,
   CONTENT_REVITALIZATION_STRATEGIES,
+  createCommunityPoll,
   createForumThread,
   createInitialCommunityState,
   ENGAGEMENT_INTEGRATION_BLUEPRINTS,
@@ -42,12 +47,14 @@ import {
   FAQ_ITEMS,
   ForumThread,
   FOUR_PILLAR_SITE_AUDIT,
+  getQuizMasteryBadge,
   gradeQuizAnswers,
   hydrateCommunityState,
   moderateArticleComment,
   PerfCalculatorInput,
   PERFORMANCE_OPTIMIZATION_PILLARS,
   reactToArticle,
+  recordCommunityEngagementAction,
   replyArticleComment,
   SEO_CONTENT_BLUEPRINTS,
   SEO_KEYWORD_MATRIX,
@@ -300,6 +307,45 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
   );
   const [quizSubmitted, setQuizSubmitted] = useState(false);
 
+  // Create Poll State
+  const [showCreatePollForm, setShowCreatePollForm] = useState(false);
+  const [newPollQuestion, setNewPollQuestion] = useState('');
+  const [newPollCategory, setNewPollCategory] = useState('Topluluk Anketi');
+  const [newPollOptionsText, setNewPollOptionsText] = useState('');
+  const [pollFormError, setPollFormError] = useState<string | null>(null);
+
+  // Engagement Streak Tracker (persisted across sessions)
+  const [engagementStats, setEngagementStats] =
+    useState<CommunityEngagementStats>(() => {
+      try {
+        const raw = localStorage.getItem(COMMUNITY_ENGAGEMENT_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as CommunityEngagementStats;
+          if (parsed && typeof parsed.actionsCount === 'number') {
+            return recordCommunityEngagementAction(parsed, Date.now(), 0);
+          }
+        }
+      } catch {
+        // ignore storage errors
+      }
+      return recordCommunityEngagementAction(null, Date.now(), 0);
+    });
+
+  const bumpEngagement = (increment = 1) => {
+    setEngagementStats((prev) => {
+      const next = recordCommunityEngagementAction(prev, Date.now(), increment);
+      try {
+        localStorage.setItem(
+          COMMUNITY_ENGAGEMENT_STORAGE_KEY,
+          JSON.stringify(next)
+        );
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  };
+
   // UX & FAQ State
   const [faqCategoryFilter, setFaqCategoryFilter] = useState<string>('Tümü');
   const [faqSearch, setFaqSearch] = useState('');
@@ -484,6 +530,7 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
     setForumFormError(null);
     setCommunityState(localValidation.state);
     setExpandedThreadId(localValidation.created.id);
+    bumpEngagement(1);
     const payload = {
       title: newThreadTitle,
       category: newThreadCategory,
@@ -516,6 +563,7 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
 
   const handleUpvoteThread = async (threadId: string) => {
     setCommunityState((prev) => upvoteForumThread(prev, threadId));
+    bumpEngagement(1);
     try {
       const res = await fetch('/api/community/forum/upvote', {
         method: 'POST',
@@ -548,6 +596,7 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
     setReplyErrorByThread((prev) => ({ ...prev, [threadId]: '' }));
     setReplyDraftByThread((prev) => ({ ...prev, [threadId]: '' }));
     setCommunityState(localCheck.state);
+    bumpEngagement(1);
 
     try {
       const res = await fetch('/api/community/forum/reply', {
@@ -609,6 +658,7 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
     if (votedPollOptions[pollId]) return;
     setVotedPollOptions((prev) => ({ ...prev, [pollId]: optionId }));
     setCommunityState((prev) => voteInPoll(prev, pollId, optionId));
+    bumpEngagement(1);
     try {
       const res = await fetch('/api/community/polls/vote', {
         method: 'POST',
@@ -624,10 +674,57 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
     }
   };
 
+  const handleCreatePollSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const rawOptions = newPollOptionsText
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const localOut = createCommunityPoll(communityState, {
+      question: newPollQuestion,
+      category: newPollCategory,
+      options: rawOptions,
+    });
+    if (!localOut.created) {
+      setPollFormError(
+        localOut.error || 'Lütfen soru ve en az 2 benzersiz seçenek girin.'
+      );
+      return;
+    }
+    setPollFormError(null);
+    setCommunityState(localOut.state);
+    bumpEngagement(1);
+    const payload = {
+      question: newPollQuestion,
+      category: newPollCategory,
+      options: rawOptions,
+    };
+    setNewPollQuestion('');
+    setNewPollOptionsText('');
+    setShowCreatePollForm(false);
+
+    try {
+      const res = await fetch('/api/community/polls/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.state) {
+          setCommunityState(hydrateCommunityState(data.state));
+        }
+      }
+    } catch {
+      // optimistic local poll already saved
+    }
+  };
+
   const handleReactArticle = async (articleId: string) => {
     if (reactedArticles[articleId]) return;
     setReactedArticles((prev) => ({ ...prev, [articleId]: true }));
     setCommunityState((prev) => reactToArticle(prev, articleId));
+    bumpEngagement(1);
     try {
       const res = await fetch('/api/community/articles/react', {
         method: 'POST',
@@ -774,6 +871,11 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
     [quizSelections]
   );
 
+  const quizMastery = useMemo(
+    () => getQuizMasteryBadge(quizGrade.scorePct),
+    [quizGrade.scorePct]
+  );
+
   const combinedPublishedArticles = useMemo(() => {
     const publishedStudio = (communityState.studioArticles || []).filter(
       (a) => a.status === 'published'
@@ -816,15 +918,15 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
       className="flex flex-col h-full bg-white dark:bg-[#141518] text-neutral-900 dark:text-neutral-100 overflow-hidden"
     >
       {/* Top Bar following Single-Row 3-Zone Contract */}
-      <header className="flex items-center justify-between gap-4 px-4 sm:px-6 py-3.5 bg-white dark:bg-[#18191d] border-b border-neutral-200 dark:border-neutral-800 shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
+      <header className="flex items-center justify-between gap-2 sm:gap-4 px-3 sm:px-6 py-2.5 sm:py-3.5 bg-white dark:bg-[#18191d] border-b border-neutral-200 dark:border-neutral-800 shrink-0 min-w-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             type="button"
             onClick={onBack}
-            className="px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-xs font-semibold text-neutral-700 dark:text-neutral-200 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0"
+            className="min-h-[44px] sm:min-h-0 px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-xs font-semibold text-neutral-700 dark:text-neutral-200 flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0"
           >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Sohbete Dön</span>
+            <ArrowLeft className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+            <span className="hidden xs:inline sm:inline">Sohbete Dön</span>
           </button>
           <h1 className="text-sm sm:text-base font-bold tracking-tight text-neutral-900 dark:text-white truncate">
             İçerik, SEO & Topluluk
@@ -866,9 +968,10 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
                 'gemini-4-argon'
               )
             }
-            className="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0"
+            className="min-h-[44px] sm:min-h-0 px-3 sm:px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0"
           >
-            <span>AI Strateji Danışmanı</span>
+            <span className="hidden sm:inline">AI Strateji Danışmanı</span>
+            <span className="sm:hidden">AI Plan</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -878,7 +981,7 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
       <div
         role="tablist"
         aria-label="Mobil Bölüm Seçici"
-        className="lg:hidden flex items-center gap-1.5 px-4 py-2 overflow-x-auto bg-neutral-50 dark:bg-[#18191d] border-b border-neutral-200 dark:border-neutral-800 shrink-0"
+        className="lg:hidden flex items-center gap-1.5 px-3 py-2 overflow-x-auto bg-neutral-50 dark:bg-[#18191d] border-b border-neutral-200 dark:border-neutral-800 shrink-0"
       >
         {tabs.map((tab) => {
           const isSelected = activeTab === tab.id;
@@ -889,7 +992,7 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
               role="tab"
               aria-selected={isSelected}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap shrink-0 ${
+              className={`min-h-[44px] px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap shrink-0 ${
                 isSelected
                   ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900'
                   : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-200/60 dark:hover:bg-neutral-800'
@@ -2037,7 +2140,7 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
                   <button
                     type="submit"
                     data-testid="submit-forum-thread-btn"
-                    className="w-full py-2.5 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+                    className="w-full min-h-[44px] py-2.5 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer whitespace-nowrap"
                   >
                     <MessageSquare className="w-3.5 h-3.5" />
                     <span>Konuyu Yayınla</span>
@@ -2047,6 +2150,23 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
 
               {/* Right: Thread Feed & AI Expert Replies */}
               <section className="lg:col-span-8 space-y-4">
+                {/* Community Engagement Streak Strip */}
+                <div
+                  data-testid="community-engagement-streak-bar"
+                  className="p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-[#18191d] flex flex-wrap items-center justify-between gap-2 text-xs tabular-nums"
+                >
+                  <div className="flex items-center gap-2 font-semibold text-neutral-800 dark:text-neutral-200">
+                    <Flame className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span>
+                      Katılım Serisi: {engagementStats.streakDays} gün ·{' '}
+                      {engagementStats.actionsCount} etkileşim
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                    Konulara yorum, oy ve anket katkınız kaydedilir
+                  </span>
+                </div>
+
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-1 p-1 rounded-lg bg-neutral-100 dark:bg-[#202227] overflow-x-auto">
                     {(
@@ -2062,7 +2182,7 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
                         key={cat}
                         type="button"
                         onClick={() => setForumCategoryFilter(cat)}
-                        className={`px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer whitespace-nowrap shrink-0 ${
+                        className={`min-h-[40px] sm:min-h-0 px-2.5 py-1.5 sm:py-1 rounded-md text-xs font-medium transition cursor-pointer whitespace-nowrap shrink-0 ${
                           forumCategoryFilter === cat
                             ? 'bg-white dark:bg-[#141518] text-neutral-900 dark:text-white shadow-xs'
                             : 'text-neutral-600 dark:text-neutral-400'
@@ -2074,14 +2194,14 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
                   </div>
 
                   <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-2.5" />
+                    <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-3 sm:top-2.5" />
                     <input
                       type="text"
                       value={forumSearch}
                       onChange={(e) => setForumSearch(e.target.value)}
                       aria-label="Forumda ara"
                       placeholder="Tartışmalarda ara..."
-                      className="w-full sm:w-52 pl-8 pr-3 py-1.5 rounded-lg bg-white dark:bg-[#18191d] border border-neutral-200 dark:border-neutral-800 text-xs text-neutral-900 dark:text-white"
+                      className="w-full sm:w-52 min-h-[44px] sm:min-h-0 pl-8 pr-3 py-2 sm:py-1.5 rounded-lg bg-white dark:bg-[#18191d] border border-neutral-200 dark:border-neutral-800 text-xs text-neutral-900 dark:text-white"
                     />
                   </div>
                 </div>
@@ -2132,7 +2252,7 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
                               type="button"
                               onClick={() => handleUpvoteThread(thread.id)}
                               aria-label={`Beğen: ${thread.title}`}
-                              className="px-2.5 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-xs font-semibold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5 transition cursor-pointer tabular-nums shrink-0"
+                              className="min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2.5 sm:py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-xs font-semibold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5 transition cursor-pointer tabular-nums shrink-0"
                             >
                               <ThumbsUp className="w-3.5 h-3.5 text-indigo-500" />
                               <span>{thread.upvotes}</span>
@@ -2152,7 +2272,7 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
                                   isExpanded ? null : thread.id
                                 )
                               }
-                              className="text-xs font-semibold text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white flex items-center gap-1 cursor-pointer tabular-nums"
+                              className="min-h-[44px] sm:min-h-0 px-2 py-1 text-xs font-semibold text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white flex items-center gap-1 cursor-pointer tabular-nums"
                             >
                               {isExpanded ? (
                                 <ChevronDown className="w-3.5 h-3.5" />
@@ -2169,7 +2289,7 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
                                 onClick={() =>
                                   handleRequestAiExpertReply(thread.id)
                                 }
-                                className="px-2.5 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 text-xs font-semibold flex items-center gap-1 transition cursor-pointer whitespace-nowrap"
+                                className="min-h-[44px] sm:min-h-0 px-3 py-2 sm:px-2.5 sm:py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 text-xs font-semibold flex items-center gap-1 transition cursor-pointer whitespace-nowrap"
                               >
                                 <Sparkles className="w-3 h-3" />
                                 <span>
@@ -2186,7 +2306,7 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
                                     'gemini-4-argon'
                                   )
                                 }
-                                className="text-xs font-semibold text-neutral-500 hover:text-neutral-900 dark:hover:text-white cursor-pointer whitespace-nowrap"
+                                className="min-h-[44px] sm:min-h-0 px-2 py-1 text-xs font-semibold text-neutral-500 hover:text-neutral-900 dark:hover:text-white cursor-pointer whitespace-nowrap"
                               >
                                 Sohbette Aç
                               </button>
@@ -2723,18 +2843,135 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
                 </div>
               </section>
 
+              {/* Engagement Streak Banner */}
+              <div className="p-4 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-[#18191d] flex flex-wrap items-center justify-between gap-3 text-xs tabular-nums">
+                <div className="flex items-center gap-2 font-bold text-neutral-900 dark:text-white">
+                  <Flame className="w-4 h-4 text-amber-500 shrink-0" />
+                  <span>
+                    Etkileşim Serisi: {engagementStats.streakDays} gün ·{' '}
+                    {engagementStats.actionsCount} katkı
+                  </span>
+                </div>
+                <span className="text-neutral-500 dark:text-neutral-400">
+                  Yeni anket başlatın, oy verin veya 4 soruluk teknik testi tamamlayın.
+                </span>
+              </div>
+
               {/* Polls + Interactive Quiz Split */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
                 {/* Live Community Polls */}
                 <section className="p-5 sm:p-6 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#18191d] space-y-5">
-                  <div>
-                    <h2 className="text-lg font-bold text-neutral-900 dark:text-white">
-                      Canlı Topluluk Anketleri
-                    </h2>
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
-                      Oyunuzu verin; önceliklendirme ve yol haritası dağılımını anlık görün.
-                    </p>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-lg font-bold text-neutral-900 dark:text-white">
+                        Canlı Topluluk Anketleri
+                      </h2>
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+                        Oyunuzu verin veya yeni bir topluluk anketi başlatın.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      data-testid="toggle-create-poll-btn"
+                      onClick={() => setShowCreatePollForm((v) => !v)}
+                      className="min-h-[44px] sm:min-h-0 px-3 py-2 sm:py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>
+                        {showCreatePollForm ? 'Formu Kapat' : 'Yeni Anket Oluştur'}
+                      </span>
+                    </button>
                   </div>
+
+                  {showCreatePollForm && (
+                    <form
+                      onSubmit={handleCreatePollSubmit}
+                      data-testid="create-poll-form"
+                      className="p-4 rounded-xl bg-neutral-50 dark:bg-[#141518] border border-neutral-200 dark:border-neutral-800 space-y-3"
+                    >
+                      <div className="space-y-1">
+                        <label
+                          htmlFor="new-poll-question"
+                          className="block text-xs font-semibold text-neutral-800 dark:text-neutral-200"
+                        >
+                          Anket Sorusu
+                        </label>
+                        <input
+                          id="new-poll-question"
+                          data-testid="poll-question-input"
+                          type="text"
+                          value={newPollQuestion}
+                          onChange={(e) => {
+                            setNewPollQuestion(e.target.value);
+                            if (pollFormError) setPollFormError(null);
+                          }}
+                          placeholder="Örn: Mobil kullanıcılar için ilk hangi özelliği genişletelim?"
+                          className="w-full min-h-[44px] sm:min-h-0 px-3 py-2 rounded-lg bg-white dark:bg-[#18191d] border border-neutral-200 dark:border-neutral-700 text-xs text-neutral-900 dark:text-white"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div className="space-y-1">
+                          <label
+                            htmlFor="new-poll-category"
+                            className="block text-xs font-semibold text-neutral-800 dark:text-neutral-200"
+                          >
+                            Kategori
+                          </label>
+                          <select
+                            id="new-poll-category"
+                            value={newPollCategory}
+                            onChange={(e) => setNewPollCategory(e.target.value)}
+                            className="w-full min-h-[44px] sm:min-h-0 px-3 py-2 rounded-lg bg-white dark:bg-[#18191d] border border-neutral-200 dark:border-neutral-700 text-xs text-neutral-900 dark:text-white"
+                          >
+                            <option value="Topluluk Anketi">Topluluk Anketi</option>
+                            <option value="Ürün Yol Haritası">Ürün Yol Haritası</option>
+                            <option value="Mobil Deneyim">Mobil Deneyim</option>
+                            <option value="AI Model Tercihi">AI Model Tercihi</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label
+                            htmlFor="new-poll-options"
+                            className="block text-xs font-semibold text-neutral-800 dark:text-neutral-200"
+                          >
+                            Seçenekler (Her satıra 1 seçenek)
+                          </label>
+                          <textarea
+                            id="new-poll-options"
+                            data-testid="poll-options-input"
+                            rows={3}
+                            value={newPollOptionsText}
+                            onChange={(e) => {
+                              setNewPollOptionsText(e.target.value);
+                              if (pollFormError) setPollFormError(null);
+                            }}
+                            placeholder={'Hızlı Sesli Arama\nÇevrimdışı Önbellek\nKaranlık Mod Temaları'}
+                            className="w-full px-3 py-2 rounded-lg bg-white dark:bg-[#18191d] border border-neutral-200 dark:border-neutral-700 text-xs text-neutral-900 dark:text-white resize-none"
+                          />
+                        </div>
+                      </div>
+
+                      {pollFormError && (
+                        <p
+                          role="alert"
+                          data-testid="poll-validation-error"
+                          className="text-xs font-medium text-rose-600 dark:text-rose-400"
+                        >
+                          {pollFormError}
+                        </p>
+                      )}
+
+                      <button
+                        type="submit"
+                        data-testid="submit-poll-btn"
+                        className="w-full min-h-[44px] py-2.5 px-4 rounded-lg bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                      >
+                        <BarChart3 className="w-3.5 h-3.5" />
+                        <span>Anketi Yayınla</span>
+                      </button>
+                    </form>
+                  )}
 
                   <div className="divide-y divide-neutral-100 dark:divide-neutral-800 space-y-5">
                     {communityState.polls.map((poll) => {
@@ -2767,7 +3004,7 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
                                   onClick={() =>
                                     handleVotePoll(poll.id, opt.id)
                                   }
-                                  className={`w-full text-left p-2.5 rounded-xl border transition cursor-pointer relative overflow-hidden ${
+                                  className={`w-full min-h-[44px] text-left p-3 sm:p-2.5 rounded-xl border transition cursor-pointer relative overflow-hidden ${
                                     isChosen
                                       ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/25'
                                       : 'border-neutral-200 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700'
@@ -2825,6 +3062,27 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
                     )}
                   </div>
 
+                  {quizSubmitted && (
+                    <div
+                      data-testid="quiz-mastery-badge"
+                      className={`p-3.5 rounded-xl border flex items-start gap-2.5 text-xs ${
+                        quizMastery.tier === 'gold'
+                          ? 'bg-amber-50/70 dark:bg-amber-950/25 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-100'
+                          : quizMastery.tier === 'silver'
+                          ? 'bg-indigo-50/70 dark:bg-indigo-950/25 border-indigo-200 dark:border-indigo-800 text-indigo-900 dark:text-indigo-100'
+                          : 'bg-neutral-50 dark:bg-[#141518] border-neutral-200 dark:border-neutral-800 text-neutral-800 dark:text-neutral-200'
+                      }`}
+                    >
+                      <Award className="w-4 h-4 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-bold">{quizMastery.title}</div>
+                        <p className="text-[11px] opacity-85 mt-0.5">
+                          {quizMastery.summary}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-4">
                     {ENGAGEMENT_QUIZ_QUESTIONS.map((q, qIdx) => {
                       const selectedIdx = quizSelections[q.id];
@@ -2866,7 +3124,7 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
                                       [q.id]: oIdx,
                                     }));
                                   }}
-                                  className={`px-3 py-2 rounded-lg border text-left text-xs transition cursor-pointer ${stateCls}`}
+                                  className={`min-h-[44px] sm:min-h-0 px-3 py-2.5 sm:py-2 rounded-lg border text-left text-xs transition cursor-pointer ${stateCls}`}
                                 >
                                   {optLabel}
                                 </button>
@@ -2892,8 +3150,11 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
                           Object.keys(quizSelections).length <
                           ENGAGEMENT_QUIZ_QUESTIONS.length
                         }
-                        onClick={() => setQuizSubmitted(true)}
-                        className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-45 text-white text-xs font-semibold transition cursor-pointer whitespace-nowrap"
+                        onClick={() => {
+                          setQuizSubmitted(true);
+                          bumpEngagement(1);
+                        }}
+                        className="min-h-[44px] sm:min-h-0 px-4 py-2.5 sm:py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-45 text-white text-xs font-semibold transition cursor-pointer whitespace-nowrap"
                       >
                         Yanıtları Değerlendir
                       </button>
@@ -2904,7 +3165,7 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
                           setQuizSelections({});
                           setQuizSubmitted(false);
                         }}
-                        className="px-4 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 text-xs font-semibold text-neutral-800 dark:text-neutral-200 cursor-pointer whitespace-nowrap"
+                        className="min-h-[44px] sm:min-h-0 px-4 py-2.5 sm:py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 text-xs font-semibold text-neutral-800 dark:text-neutral-200 cursor-pointer whitespace-nowrap"
                       >
                         Testi Sıfırla
                       </button>

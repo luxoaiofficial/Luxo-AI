@@ -96,6 +96,7 @@ import {
   BLOG_ARTICLES,
   buildWebAppManifest,
   type CommunityHubState,
+  createCommunityPoll,
   createForumThread,
   createInitialCommunityState,
   generateRobotsTxt,
@@ -1337,6 +1338,21 @@ async function startServer() {
     const next = voteInPoll(serverCommunityState, pollId, optionId);
     persistServerCommunityState(next);
     return res.json({ ok: true, state: next });
+  });
+
+  app.post('/api/community/polls/create', (req, res) => {
+    const { question = '', category = 'Topluluk Anketi', options = [] } = req.body || {};
+    const optionList = Array.isArray(options) ? options.map((o) => String(o || '')) : [];
+    const outcome = createCommunityPoll(serverCommunityState, {
+      question: String(question),
+      category: String(category),
+      options: optionList,
+    });
+    if (!outcome.created) {
+      return res.status(400).json({ ok: false, error: outcome.error });
+    }
+    persistServerCommunityState(outcome.state);
+    return res.json({ ok: true, created: outcome.created, state: outcome.state });
   });
 
   app.post('/api/community/articles/comment', (req, res) => {
