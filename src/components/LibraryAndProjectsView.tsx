@@ -13,7 +13,8 @@ import {
   X,
 } from 'lucide-react';
 import { LibraryItem, LuxoProject } from '../types/luxo';
-import { SocialShareButton } from './SocialShareBar';
+import { QuickSocialShareButtons } from './SocialShareBar';
+import { ContentRatingAndComments } from './ContentRatingAndComments';
 
 interface LibraryViewProps {
   onBack: () => void;
@@ -118,16 +119,20 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             <div
               key={item.id}
               onClick={() => setSelectedItem(item)}
-              className="relative flex flex-col justify-between p-4 rounded-3xl h-40 bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-800 shadow-xs hover:border-neutral-400 dark:hover:border-neutral-600 transition cursor-pointer group"
+              className="relative flex flex-col justify-between p-4 rounded-3xl min-h-[176px] bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-800 shadow-xs hover:border-neutral-400 dark:hover:border-neutral-600 transition cursor-pointer group gap-2"
             >
               <div>
                 <div className="flex items-start justify-between gap-2">
                   <span className="text-sm font-bold text-neutral-900 dark:text-white truncate">
                     {item.title}
                   </span>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <SocialShareButton
+                  <div
+                    className="flex items-center gap-1 shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <QuickSocialShareButtons
                       compact
+                      showMoreModal={false}
                       payload={{
                         title: item.title,
                         excerpt: item.summary || item.content,
@@ -157,18 +162,32 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 </p>
               </div>
 
-              <div className="flex items-center justify-between pt-2 border-t border-neutral-100 dark:border-neutral-800/70">
-                <div className="flex items-center gap-2 text-xs text-neutral-500">
-                  {item.type === 'web' && <Globe className="w-4 h-4 text-blue-500" />}
-                  {item.type === 'image' && <ImageIcon className="w-4 h-4 text-pink-500" />}
-                  {item.type === 'document' && <FileText className="w-4 h-4 text-emerald-500" />}
-                  {item.type === 'folder' && <Folder className="w-4 h-4 text-amber-500" />}
-                  {item.type === 'code' && <Code className="w-4 h-4 text-purple-500" />}
-                  <span>{item.createdAt}</span>
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="space-y-2 pt-2 border-t border-neutral-100 dark:border-neutral-800/70"
+              >
+                <ContentRatingAndComments
+                  compact
+                  contentKey={`library:${item.id}`}
+                  contentTitle={item.title}
+                />
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs text-neutral-500">
+                    {item.type === 'web' && <Globe className="w-4 h-4 text-blue-500" />}
+                    {item.type === 'image' && <ImageIcon className="w-4 h-4 text-pink-500" />}
+                    {item.type === 'document' && <FileText className="w-4 h-4 text-emerald-500" />}
+                    {item.type === 'folder' && <Folder className="w-4 h-4 text-amber-500" />}
+                    {item.type === 'code' && <Code className="w-4 h-4 text-purple-500" />}
+                    <span>{item.createdAt}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedItem(item)}
+                    className="text-xs font-semibold text-blue-600 dark:text-blue-400 cursor-pointer"
+                  >
+                    İncele →
+                  </button>
                 </div>
-                <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
-                  İncele →
-                </span>
               </div>
             </div>
           ))}
@@ -225,15 +244,14 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             <div className="p-4 rounded-2xl bg-neutral-100 dark:bg-[#18181b] text-xs font-mono whitespace-pre-wrap max-h-60 overflow-y-auto">
               {selectedItem.content}
             </div>
-            <div className="flex items-center justify-between gap-2">
-              <SocialShareButton
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <QuickSocialShareButtons
                 payload={{
                   title: selectedItem.title,
                   excerpt: selectedItem.summary || selectedItem.content,
                   contentType: 'library',
                   badge: 'LUXO KİTAPLIK · BİLGİ KAYDI',
                 }}
-                label="Sosyal Medyada Paylaş"
               />
               <button
                 type="button"
@@ -246,6 +264,10 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                 Sohbette Kullan ve Analiz Et
               </button>
             </div>
+            <ContentRatingAndComments
+              contentKey={`library:${selectedItem.id}`}
+              contentTitle={selectedItem.title}
+            />
           </div>
         </div>
       )}

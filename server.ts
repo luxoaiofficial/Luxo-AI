@@ -93,6 +93,7 @@ import type {
 import {
   addArticleComment,
   addForumReply,
+  addGenericContentComment,
   BLOG_ARTICLES,
   buildWebAppManifest,
   type CommunityHubState,
@@ -102,6 +103,7 @@ import {
   generateRobotsTxt,
   generateSitemapXml,
   hydrateCommunityState,
+  rateContentItem,
   reactToArticle,
   scorePageMetaTags,
   type SitemapDynamicEntry,
@@ -604,7 +606,13 @@ function isInteractionsModel(modelId: LuxoModelId): boolean {
 }
 
 function supportsThinkingConfig(modelName: string): boolean {
-  return modelName === 'gemini-4-argon' || modelName === 'gemini-3.8-flash';
+  return (
+    modelName === 'gemini-4-argon' ||
+    modelName === 'gemini-4-hydrogen' ||
+    modelName === 'gemini-4-carbon' ||
+    modelName === 'gemini-4-neon' ||
+    modelName === 'gemini-3.8-flash'
+  );
 }
 
 const sdkModelCooldownMap = new Map<string, number>();
@@ -634,11 +642,14 @@ function resolveCandidateModels(
   const backend = LUXO_MODELS[modelId]?.sdkBackend || 'gemini-3.8-flash';
   let rawOrder: string[];
   if (backend === 'gemini-3.5-transcribe') {
-    rawOrder = ['gemini-3.5-transcribe', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'];
-  } else if (backend === 'gemini-3.8-flash') {
+    rawOrder = ['gemini-3.5-transcribe', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+  } else if (
+    backend === 'gemini-3.8-flash' ||
+    backend === 'gemini-4-argon' ||
+    backend === 'gemini-4-hydrogen'
+  ) {
     rawOrder = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
   } else {
-    // Route flagship & specialized ecosystems through ultra-low-latency verified Gemini 3.1/3.8 engines first so responses start in ~0.7s without quota stalls
     rawOrder = ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
   }
 
@@ -646,7 +657,7 @@ function resolveCandidateModels(
   if (healthy.length > 0) {
     return healthy;
   }
-  return ['gemini-3.1-flash-lite'];
+  return ['gemini-3.8-flash', 'gemini-3.1-flash-lite'];
 }
 
 interface ServerCollabRoom {
@@ -1383,6 +1394,50 @@ async function startServer() {
     return res.json({ ok: true, state: next });
   });
 
+  app.post('/api/community/content/rate', (req, res) => {
+    const { contentKey = '', stars = 0, authorName = '' } = req.body || {};
+    const outcome = rateContentItem(serverCommunityState, {
+      contentKey: String(contentKey),
+      stars: Number(stars),
+      authorName: String(authorName),
+    });
+    if (!outcome.entry) {
+      return res.status(400).json({ ok: false, error: outcome.error });
+    }
+    persistServerCommunityState(outcome.state);
+    return res.json({
+      ok: true,
+      entry: outcome.entry,
+      summary: outcome.summary,
+      state: outcome.state,
+    });
+  });
+
+  app.post('/api/community/content/comment', (req, res) => {
+    const { contentKey = '', authorName = '', body = '', ratingStars } =
+      req.body || {};
+    const parsedStars =
+      typeof ratingStars === 'number' && Number.isFinite(ratingStars)
+        ? ratingStars
+        : undefined;
+    const outcome = addGenericContentComment(serverCommunityState, {
+      contentKey: String(contentKey),
+      authorName: String(authorName),
+      body: String(body),
+      ratingStars: parsedStars,
+    });
+    if (!outcome.comment) {
+      return res.status(400).json({ ok: false, error: outcome.error });
+    }
+    persistServerCommunityState(outcome.state);
+    return res.json({
+      ok: true,
+      comment: outcome.comment,
+      summary: outcome.summary,
+      state: outcome.state,
+    });
+  });
+
   app.post('/api/content-studio/generate', async (req, res) => {
     const {
       topic = '',
@@ -1632,16 +1687,16 @@ async function startServer() {
   // 1200x630 OpenGraph Social Share Card SVG Endpoint
   app.get('/api/og-image', (req, res) => {
     const rawTitle = sanitizeLuxoBrand(
-      String(req.query.title || 'Luxo AI · 113 Yapay Zeka Modeli')
+      String(req.query.title || 'Luxo AI · 115 Yapay Zeka Modeli')
     ).slice(0, 62);
     const rawExcerpt = sanitizeLuxoBrand(
       String(
         req.query.excerpt ||
-          'Gemini 4 Hydrogen, ChatGPT-5.2 Pro, Claude 4.6 Opus, DeepSeek V3.2, Grok 4, Qwen 3, Nano Banana 4K görsel ve Google Veo 3 video stüdyosu.'
+          'Gemini 4 Hydrogen, Carbon & Neon, ChatGPT-5.2 Pro, Claude 4.6 Opus, DeepSeek V3.2, Nano Banana 4K ve Google Veo 3.'
       )
     ).slice(0, 128);
     const rawBadge = sanitizeLuxoBrand(
-      String(req.query.badge || '113 YAPAY ZEKA · AUTO-ROUTER & VEO 3')
+      String(req.query.badge || '115 YAPAY ZEKA · AUTO-ROUTER & VEO 3')
     ).slice(0, 44);
 
     const words = rawExcerpt.split(/\s+/).filter(Boolean);
@@ -1697,7 +1752,7 @@ async function startServer() {
       }
 
       <g transform="translate(112, 476)">
-        <text x="0" y="24" fill="#38bdf8" font-family="JetBrains Mono, monospace" font-size="17" font-weight="600">113 Yapay Zeka Modeli · Luxo Auto-Router · Nano Banana 4K · Google Veo 3</text>
+        <text x="0" y="24" fill="#38bdf8" font-family="JetBrains Mono, monospace" font-size="17" font-weight="600">115 Yapay Zeka Modeli · Luxo Auto-Router · Nano Banana 4K · Google Veo 3</text>
       </g>
     </svg>`;
 
@@ -1829,7 +1884,7 @@ async function startServer() {
           const criticResp = await ai.models.generateContent({
             model: evoModel,
             contents: `Hedef Ekosistem: "${validFocus}". Mevcut kurallar: [${existingTitles}].
-Mevcut 113 yapay zeka modelimizin yanıt kalitesini, hızını, Türkçe dil doğruluğunu, kod güvenliğini veya sayısal kesinliğini artıracak YENİ ve somut bir öz-gelişim yaması üret.`,
+Mevcut 115 yapay zeka modelimizin yanıt kalitesini, hızını, Türkçe dil doğruluğunu, kod güvenliğini veya sayısal kesinliğini artıracak YENİ ve somut bir öz-gelişim yaması üret.`,
             config: {
               abortSignal: AbortSignal.timeout(5500),
               responseMimeType: 'application/json',
@@ -2273,6 +2328,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
     const lastUserMessage = reversedUserMsg?.content || 'Merhaba';
     const activeAttachment = reversedUserMsg?.inlineAttachment;
 
+    const reqStartMs = Date.now();
     const autoRoute =
       validModelId === 'luxo-auto-router'
         ? resolveAutoRoutedModel(lastUserMessage, serverEvolutionState)
@@ -2281,9 +2337,16 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
       ? autoRoute.targetModelId
       : validModelId;
     const modelCfg = LUXO_MODELS[effectiveModelId];
-    persistServerEvolutionState(
-      recordModelUsageInState(serverEvolutionState, effectiveModelId)
-    );
+    const recordLatencyTelemetry = (success: boolean) => {
+      const latencyMs = Math.max(120, Date.now() - reqStartMs);
+      persistServerEvolutionState(
+        recordModelUsageInState(serverEvolutionState, effectiveModelId, {
+          latencyMs,
+          success,
+        })
+      );
+      return latencyMs;
+    };
     const effectiveDeepReasoning =
       Boolean(deepReasoning) || Boolean(autoRoute?.autoDeepReasoning);
     const effectiveWebSearch =
@@ -2395,7 +2458,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
     const tuningSignature = `${parsedReasoningLevel}:${parsedConciseness}:${parsedCodeStrictness}:${parsedAutoVerify ? 1 : 0}:${parsedTemperature ?? 'def'}`;
     const cacheKey =
       !hasInlineAttachment && !effectiveWebSearch && normalizedMessages.length <= 2
-        ? `v5::${effectiveModelId}::${synthesisMode}::${effectiveDeepReasoning ? '1' : '0'}::${tuningSignature}::${serverEvolutionState.generation}::${lastUserMessage.trim().toLowerCase()}`
+        ? `v6::${effectiveModelId}::${synthesisMode}::${effectiveDeepReasoning ? '1' : '0'}::${tuningSignature}::${serverEvolutionState.generation}::${lastUserMessage.trim().toLowerCase()}`
         : '';
 
     const cachedHit = cacheKey ? chatResponseCache.get(cacheKey) : undefined;
@@ -2405,6 +2468,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
       Date.now() - cachedHit.createdAt < 10 * 60 * 1000
     ) {
       chatCacheHitCount += 1;
+      const cacheLatencyMs = recordLatencyTelemetry(true);
       if (!stream) {
         return res.json({
           text: cachedHit.text,
@@ -2413,6 +2477,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
           followUpSuggestions: cachedHit.followUpSuggestions,
           resolvedModel: 'lru-verified-cache',
           routedModelId: cachedHit.routedModelId,
+          latencyMs: cacheLatencyMs,
         });
       }
       res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -2424,6 +2489,9 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
             thinkingSteps: cachedHit.thinkingSteps,
             citations: cachedHit.citations,
             followUpSuggestions: cachedHit.followUpSuggestions,
+            resolvedModel: 'lru-verified-cache',
+            routedModelId: cachedHit.routedModelId,
+            latencyMs: cacheLatencyMs,
           },
         })}\n\n`
       );
@@ -2465,6 +2533,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
             hasUrlInPrompt
           );
           if (interRes?.text) {
+            const interLatencyMs = recordLatencyTelemetry(true);
             return res.json({
               text: verifyAndRepairModelOutput(interRes.text, {
                 allowLong: allowLongOutput,
@@ -2482,6 +2551,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
               followUpSuggestions: fallbackData.followUpSuggestions,
               resolvedModel: interRes.resolvedModel,
               routedModelId: effectiveModelId,
+              latencyMs: interLatencyMs,
             });
           }
         } catch (err) {
@@ -2500,11 +2570,10 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
         for (const candidateModel of candidateModels) {
           try {
             const perModelTimeout =
-              desiredThinkingLevel === ThinkingLevel.HIGH
-                ? 7500
-                : candidateModel === 'gemini-3.1-flash-lite'
-                ? 4200
-                : 4800;
+              desiredThinkingLevel === ThinkingLevel.HIGH ? 22000 : 18000;
+            const allowTemp =
+              typeof parsedTemperature === 'number' &&
+              !candidateModel.startsWith('gemini-4-');
             const response = await ai.models.generateContent({
               model: candidateModel,
               contents: buildGeminiContents(recentMessages),
@@ -2512,9 +2581,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
                 abortSignal: AbortSignal.timeout(perModelTimeout),
                 systemInstruction,
                 tools: buildStandardTools(),
-                ...(typeof parsedTemperature === 'number'
-                  ? { temperature: parsedTemperature }
-                  : {}),
+                ...(allowTemp ? { temperature: parsedTemperature } : {}),
                 ...(supportsThinkingConfig(candidateModel)
                   ? {
                       thinkingConfig: {
@@ -2537,6 +2604,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
                   fallbackData.thinkingSteps,
                   grounded.length > 0 ? grounded : fallbackData.citations
                 );
+                const liveLatencyMs = recordLatencyTelemetry(true);
                 return res.json({
                   text: cleaned,
                   thinkingSteps: fallbackData.thinkingSteps,
@@ -2545,6 +2613,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
                   followUpSuggestions: fallbackData.followUpSuggestions,
                   resolvedModel: candidateModel,
                   routedModelId: effectiveModelId,
+                  latencyMs: liveLatencyMs,
                 });
               }
             }
@@ -2562,8 +2631,11 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
           }
         }
       }
+      const fallbackLatencyMs = recordLatencyTelemetry(false);
       return res.json({
         ...fallbackData,
+        resolvedModel: `${effectiveModelId} (offline-fallback)`,
+        latencyMs: fallbackLatencyMs,
         text: verifyAndRepairModelOutput(fallbackData.text, {
           allowLong: allowLongOutput,
           exactMathProof,
@@ -2606,6 +2678,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
           thinkingSteps: fallbackData.thinkingSteps,
           citations: fallbackData.citations,
           followUpSuggestions: fallbackData.followUpSuggestions,
+          routedModelId: effectiveModelId,
         },
       })}\n\n`
     );
@@ -2638,20 +2711,25 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
           hasUrlInPrompt
         );
         if (interRes?.text) {
-          if (interRes.proofSteps.length > 0) {
-            safeSseWrite(
-              `data: ${JSON.stringify({
-                meta: {
-                  thinkingSteps: [
-                    ...(autoRoute ? [fallbackData.thinkingSteps[0]] : []),
-                    ...interRes.proofSteps,
-                  ],
-                  citations: fallbackData.citations,
-                  followUpSuggestions: fallbackData.followUpSuggestions,
-                },
-              })}\n\n`
-            );
-          }
+          const interLatencyMs = recordLatencyTelemetry(true);
+          safeSseWrite(
+            `data: ${JSON.stringify({
+              meta: {
+                thinkingSteps:
+                  interRes.proofSteps.length > 0
+                    ? [
+                        ...(autoRoute ? [fallbackData.thinkingSteps[0]] : []),
+                        ...interRes.proofSteps,
+                      ]
+                    : fallbackData.thinkingSteps,
+                citations: fallbackData.citations,
+                followUpSuggestions: fallbackData.followUpSuggestions,
+                resolvedModel: interRes.resolvedModel,
+                routedModelId: effectiveModelId,
+                latencyMs: interLatencyMs,
+              },
+            })}\n\n`
+          );
           streamCleanedChunks(interRes.text);
           safeSseWrite('data: [DONE]\n\n');
           return safeSseEnd();
@@ -2673,11 +2751,10 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
         if (clientDisconnected) break;
         try {
           const perModelTimeout =
-            desiredThinkingLevel === ThinkingLevel.HIGH
-              ? 7500
-              : candidateModel === 'gemini-3.1-flash-lite'
-              ? 4200
-              : 4800;
+            desiredThinkingLevel === ThinkingLevel.HIGH ? 22000 : 18000;
+          const allowTemp =
+            typeof parsedTemperature === 'number' &&
+            !candidateModel.startsWith('gemini-4-');
           const streamResp = await ai.models.generateContentStream({
             model: candidateModel,
             contents: buildGeminiContents(recentMessages),
@@ -2685,9 +2762,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
               abortSignal: AbortSignal.timeout(perModelTimeout),
               systemInstruction,
               tools: buildStandardTools(),
-              ...(typeof parsedTemperature === 'number'
-                ? { temperature: parsedTemperature }
-                : {}),
+              ...(allowTemp ? { temperature: parsedTemperature } : {}),
               ...(supportsThinkingConfig(candidateModel)
                 ? {
                     thinkingConfig: {
@@ -2710,23 +2785,28 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
               accumulated += chunk.text;
             }
           }
-          if (groundedCitations.length > 0) {
-            safeSseWrite(
-              `data: ${JSON.stringify({
-                meta: {
-                  thinkingSteps: fallbackData.thinkingSteps,
-                  citations: groundedCitations,
-                  followUpSuggestions: fallbackData.followUpSuggestions,
-                },
-              })}\n\n`
-            );
-          }
           const cleaned = verifyAndRepairModelOutput(accumulated, {
             allowLong: allowLongOutput,
             exactMathProof,
             autoVerify: parsedAutoVerify,
           });
           if (cleaned) {
+            const liveLatencyMs = recordLatencyTelemetry(true);
+            safeSseWrite(
+              `data: ${JSON.stringify({
+                meta: {
+                  thinkingSteps: fallbackData.thinkingSteps,
+                  citations:
+                    groundedCitations.length > 0
+                      ? groundedCitations
+                      : fallbackData.citations,
+                  followUpSuggestions: fallbackData.followUpSuggestions,
+                  resolvedModel: candidateModel,
+                  routedModelId: effectiveModelId,
+                  latencyMs: liveLatencyMs,
+                },
+              })}\n\n`
+            );
             rememberInChatCache(
               cleaned,
               fallbackData.thinkingSteps,
@@ -2753,6 +2833,19 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
       }
     }
 
+    const fallbackLatencyMs = recordLatencyTelemetry(false);
+    safeSseWrite(
+      `data: ${JSON.stringify({
+        meta: {
+          thinkingSteps: fallbackData.thinkingSteps,
+          citations: fallbackData.citations,
+          followUpSuggestions: fallbackData.followUpSuggestions,
+          resolvedModel: `${effectiveModelId} (offline-fallback)`,
+          routedModelId: effectiveModelId,
+          latencyMs: fallbackLatencyMs,
+        },
+      })}\n\n`
+    );
     streamCleanedChunks(fallbackData.text);
     safeSseWrite('data: [DONE]\n\n');
     safeSseEnd();

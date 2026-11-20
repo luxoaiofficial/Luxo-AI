@@ -31,10 +31,80 @@ import { ChatThread, LuxoModelId, LuxoUser } from './types/luxo';
 import { LUXO_MODEL_IDS } from './utils/luxoLogic';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+const firestoreDatabaseId = (
+  firebaseConfig as { firestoreDatabaseId?: string }
+).firestoreDatabaseId;
+export const db = firestoreDatabaseId
+  ? getFirestore(app, firestoreDatabaseId)
+  : getFirestore(app);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+export const GMAIL_SCOPES = [
+  'https://mail.google.com/',
+  'https://www.googleapis.com/auth/gmail.addons.current.action.compose',
+  'https://www.googleapis.com/auth/gmail.addons.current.message.action',
+  'https://www.googleapis.com/auth/gmail.addons.current.message.metadata',
+  'https://www.googleapis.com/auth/gmail.addons.current.message.readonly',
+  'https://www.googleapis.com/auth/gmail.compose',
+  'https://www.googleapis.com/auth/gmail.insert',
+  'https://www.googleapis.com/auth/gmail.labels',
+  'https://www.googleapis.com/auth/gmail.metadata',
+  'https://www.googleapis.com/auth/gmail.modify',
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/gmail.settings.basic',
+  'https://www.googleapis.com/auth/gmail.settings.sharing',
+] as const;
+
+export const gmailGoogleProvider = new GoogleAuthProvider();
+for (const scope of GMAIL_SCOPES) {
+  gmailGoogleProvider.addScope(scope);
+}
+gmailGoogleProvider.setCustomParameters({
+  prompt: 'consent select_account',
+  include_granted_scopes: 'true',
+});
+
+// Strict in-memory token store only (never localStorage or sessionStorage)
+let inMemoryGmailAccessToken: string | null = null;
+let inMemoryGmailEmail: string | null = null;
+
+onAuthStateChanged(auth, (fbUser) => {
+  if (!fbUser) {
+    inMemoryGmailAccessToken = null;
+    inMemoryGmailEmail = null;
+  }
+});
+
+export function getGmailAccessToken(): string | null {
+  return inMemoryGmailAccessToken;
+}
+
+export function getGmailUserEmail(): string | null {
+  return inMemoryGmailEmail || auth.currentUser?.email || null;
+}
+
+export function clearGmailAccessToken(): void {
+  inMemoryGmailAccessToken = null;
+  inMemoryGmailEmail = null;
+}
+
+export async function signInWithGmailOAuth(): Promise<{
+  user: FirebaseAuthUser;
+  accessToken: string;
+}> {
+  const result = await signInWithPopup(auth, gmailGoogleProvider);
+  const credential = GoogleAuthProvider.credentialFromResult(result);
+  const accessToken = credential?.accessToken || '';
+  if (!accessToken) {
+    throw new Error('Google Workspace Gmail erişim belirteci alınamadı.');
+  }
+  inMemoryGmailAccessToken = accessToken;
+  inMemoryGmailEmail = result.user.email || null;
+  return { user: result.user, accessToken };
+}
 
 export enum OperationType {
   CREATE = 'create',
@@ -243,6 +313,7 @@ export async function signInWithGoogleFirebase(): Promise<FirebaseAuthUser> {
 }
 
 export async function signOutFirebase(): Promise<void> {
+  clearGmailAccessToken();
   await signOut(auth);
 }
 

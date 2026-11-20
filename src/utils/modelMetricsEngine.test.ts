@@ -9,12 +9,12 @@ import {
   recommendModelsForTask,
 } from './modelMetricsEngine';
 
-test('buildAllModelPerformanceMetrics returns telemetry for all 113 AI models', () => {
+test('buildAllModelPerformanceMetrics returns telemetry for all 115 AI models', () => {
   const evo = createInitialEvolutionState(1_760_000_000_000);
   const metrics = buildAllModelPerformanceMetrics(evo, ['gpt-4o-mini']);
 
   assert.equal(metrics.length, LUXO_MODEL_IDS.length);
-  assert.equal(metrics.length, 113);
+  assert.equal(metrics.length, 115);
 
   const disabled = metrics.find((m) => m.modelId === 'gpt-4o-mini');
   assert.equal(disabled?.enabled, false);

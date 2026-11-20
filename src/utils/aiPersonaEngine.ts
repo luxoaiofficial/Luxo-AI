@@ -185,7 +185,13 @@ function buildModelSubSpecializationAddon(
       ? ` Model uzmanlık odakların: ${model.capabilities.slice(0, 3).join(', ')}.`
       : '';
   if (idStr.includes('hydrogen')) {
-    return `${strengthsHint} YENİ NESİL HYDROGEN ÇEKİRDEĞİ (${model.name}): Her yanıtı çok boyutlu iç doğrulamadan geçir; bilimsel kesinlik, hatasız çalışan kod ve zero-fluff net eylem adımları sun.`;
+    return `${strengthsHint} YENİ NESİL HYDROGEN ÇEKİRDEĞİ (${model.name}): Her yanıtı çok boyutlu iç doğrulamadan geçir; bilimsel kesinlik, hatasız çalışan kod ve dolgusuz net eylem adımları sun.`;
+  }
+  if (idStr.includes('carbon')) {
+    return `${strengthsHint} YENİ NESİL CARBON MİMARİ ÇEKİRDEĞİ (${model.name}): Sistem bütünlüğü, yüksek performanslı mimari ve sıfır hata kod kalitesi odağıyla somut mühendislik yanıtları ver.`;
+  }
+  if (idStr.includes('neon')) {
+    return `${strengthsHint} YENİ NESİL NEON HIZ ÇEKİRDEĞİ (${model.name}): Milisaniye çevikliğiyle gereksiz giriş yapmadan doğrudan en net ve pratik cevabı üret.`;
   }
   if (isCoderSpecialistModel(modelId)) {
     return `${strengthsHint} KOD UZMANLIĞI (${model.name}): Yazılım veya mimari sorularında tip güvenli, sınır durumları ele alınmış, doğrudan çalıştırılabilir temiz kod blokları sun.`;
@@ -568,7 +574,7 @@ export function normalizePromptIntent(
   // Extract clean primary subject
   const strippedQuestion = normalizedText
     .replace(
-      /\b(nedir|ne demek|nasıl çalışır|nasıl yapılır|nasıl öğrenilir|hakkında bilgi ver|bana anlat|açıkla|özetle|kısaca|lütfen|acaba|neden|niçin|ne işe yarar)\b/giu,
+      /\b(nedir|ne demek|kimdir|nerededir|ne zaman|hangi|kaçtır|kaç|nasıl çalışır|nasıl yapılır|nasıl öğrenilir|hakkında bilgi ver|bana anlat|açıkla|özetle|kısaca|lütfen|acaba|neden|niçin|ne işe yarar)\b/giu,
       ''
     )
     .replace(/[?!.,;:]+/g, ' ')
@@ -1101,7 +1107,7 @@ export function synthesizeAuthenticModelResponse(params: {
       points: [
         {
           label: 'Kalıcı Paylaşım Adresi (Önerilen)',
-          detail: `${permanentUrl}/ — Tüm 113 yapay zeka modeli (Gemini 4 Hydrogen dahil), Görsel & Video Stüdyosu, Otonom Gelişim ve Etkinlik/Sosyal Ağ modülleri bu adreste aktif çalışır.`,
+          detail: `${permanentUrl}/ — Tüm 115 yapay zeka modeli (Gemini 4 Hydrogen, Carbon ve Neon dahil), Görsel & Video Stüdyosu, Otonom Gelişim ve Etkinlik/Sosyal Ağ modülleri bu adreste aktif çalışır.`,
         },
         {
           label: 'Tek Tıkla Kopyalama ve Doğrudan Açma',

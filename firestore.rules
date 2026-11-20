@@ -346,6 +346,8 @@ service cloud.firestore {
         && data.modelId in [
           'gemini-4-argon',
           'gemini-4-hydrogen',
+          'gemini-4-carbon',
+          'gemini-4-neon',
           'gemini-4-ultra',
           'gemini-4-pro-code',
           'gemini-3-8-pro',

@@ -12,6 +12,7 @@ import {
   Laptop,
   LayoutDashboard,
   LogOut,
+  Mail,
   MessageSquarePlus,
   Mic,
   Moon,
@@ -55,6 +56,7 @@ interface SidebarDrawerProps {
   onOpenHub?: () => void;
   onOpenContentStudio?: () => void;
   onOpenSocial?: () => void;
+  onOpenGmail?: () => void;
   onOpenLibrary: () => void;
   onOpenProjects: () => void;
   onOpenStudio: () => void;
@@ -89,6 +91,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   onOpenHub,
   onOpenContentStudio,
   onOpenSocial,
+  onOpenGmail,
   onOpenLibrary,
   onOpenProjects,
   onOpenStudio,
@@ -361,6 +364,26 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               >
                 <Globe className="w-5 h-5 text-sky-500 shrink-0" />
                 <span className="truncate">Topluluk, SEO & Performans</span>
+              </button>
+            )}
+
+            {onOpenGmail && (
+              <button
+                type="button"
+                data-testid="sidebar-nav-gmail-btn"
+                onClick={() => {
+                  onOpenGmail();
+                  onClose();
+                }}
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <Mail className="w-5 h-5 text-rose-500 shrink-0" />
+                  <span className="truncate">Gmail Çalışma Alanı</span>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400">
+                  Google
+                </span>
               </button>
             )}
 

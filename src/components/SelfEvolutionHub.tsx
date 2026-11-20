@@ -58,7 +58,7 @@ type EvolutionTab =
 type RuleFilter = 'all' | 'active' | 'custom' | 'benchmark' | 'autonomous';
 
 const EVOLUTION_PHASES = [
-  '1/4 · Denetleyici motor 113 modelin yanıt tutarlılığını ve hız metriklerini tarıyor...',
+  '1/4 · Denetleyici motor 115 modelin yanıt tutarlılığını ve hız metriklerini tarıyor...',
   '2/4 · Kod, Türkçe dilbilgisi, matematik ve görsel/video istem uç durumları sınanıyor...',
   '3/4 · Yeni doğrulama kuralı ve yönlendirme ağırlık yaması sentezleniyor...',
   '4/4 · Sistem istemleri ve model önbellekleri canlı olarak güncelleniyor...',
@@ -483,7 +483,7 @@ export const SelfEvolutionHub: React.FC<SelfEvolutionHubProps> = ({
                   <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                 </div>
                 <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-1 leading-relaxed">
-                  Etkinleştirildiğinde kişisel veriler (e-posta, telefon, anahtar) otomatik maskelenir; yalnızca anonim kalite sinyalleri mevcut 113 yapay zekayı geliştirir.
+                  Etkinleştirildiğinde kişisel veriler (e-posta, telefon, anahtar) otomatik maskelenir; yalnızca anonim kalite sinyalleri mevcut 115 yapay zekayı geliştirir.
                 </p>
               </div>
 
@@ -649,7 +649,7 @@ export const SelfEvolutionHub: React.FC<SelfEvolutionHubProps> = ({
                   : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white'
               }`}
             >
-              113 Model & 9 Ekosistem
+              115 Model & 9 Ekosistem
             </button>
             <button
               type="button"
@@ -827,7 +827,7 @@ export const SelfEvolutionHub: React.FC<SelfEvolutionHubProps> = ({
                   Özel Hedefli Model Eğitimi & Kural Enjeksiyonu
                 </h2>
                 <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-1 leading-relaxed">
-                  Mevcut yapay zekaların hangi alanda daha keskin, hızlı veya titiz davranmasını istediğinizi yazın. Motor bu hedefi yapılandırılmış sistem yönergesine dönüştürüp seçtiğiniz modele veya tüm 113 modele canlı olarak uygular.
+                  Mevcut yapay zekaların hangi alanda daha keskin, hızlı veya titiz davranmasını istediğinizi yazın. Motor bu hedefi yapılandırılmış sistem yönergesine dönüştürüp seçtiğiniz modele veya tüm 115 modele canlı olarak uygular.
                 </p>
               </div>
 
@@ -905,7 +905,7 @@ export const SelfEvolutionHub: React.FC<SelfEvolutionHubProps> = ({
                       className="w-full px-3 py-2 rounded-lg bg-neutral-50 dark:bg-[#18181b] border border-neutral-200 dark:border-neutral-700 text-xs text-neutral-900 dark:text-white focus:outline-none focus:border-indigo-500"
                     >
                       <option value="Tüm Modeller">
-                        Tüm Modeller (113 Yapay Zeka)
+                        Tüm Modeller (115 Yapay Zeka)
                       </option>
                       {LUXO_MODEL_CATEGORIES.filter((c) => c !== 'Tümü').map(
                         (cat) => (
@@ -1043,7 +1043,7 @@ export const SelfEvolutionHub: React.FC<SelfEvolutionHubProps> = ({
             </div>
           )}
 
-          {/* TAB 4: 112 MODELS & 9 ECOSYSTEMS INSPECTOR */}
+          {/* TAB 4: 115 MODELS & 9 ECOSYSTEMS INSPECTOR */}
           {activeTab === 'models' && (
             <div className="space-y-6">
               {/* 9 Ecosystems Summary Grid */}
@@ -1100,12 +1100,12 @@ export const SelfEvolutionHub: React.FC<SelfEvolutionHubProps> = ({
                 })}
               </div>
 
-              {/* Individual 112 Models Calibration Matrix */}
+              {/* Individual 115 Models Calibration Matrix */}
               <div className="space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <h2 className="text-sm font-bold text-neutral-900 dark:text-white">
-                      113 Yapay Zeka Modeli Bireysel Güçlendirme Matrisi
+                      115 Yapay Zeka Modeli Bireysel Güçlendirme Matrisi
                     </h2>
                     <p className="text-xs text-neutral-500 dark:text-neutral-400 tabular-nums">
                       Gösterilen: {filteredModels.length} / {totalModelsCount} model
@@ -1119,7 +1119,7 @@ export const SelfEvolutionHub: React.FC<SelfEvolutionHubProps> = ({
                         type="text"
                         value={modelSearch}
                         onChange={(e) => setModelSearch(e.target.value)}
-                        aria-label="113 yapay zeka modeli içinde ara"
+                        aria-label="115 yapay zeka modeli içinde ara"
                         placeholder="Model adı veya yetenek ara..."
                         className="w-full sm:w-56 pl-8 pr-3 py-1.5 rounded-lg bg-neutral-50 dark:bg-[#202123] border border-neutral-200 dark:border-neutral-800 text-xs text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-none focus:border-indigo-500"
                       />

@@ -368,7 +368,7 @@ export function createInitialSocialPlatformState(
       id: 'evt_nov_summit',
       title: 'Luxo AI Sistem Mimarisi ve Çoklu Model Zirvesi',
       description:
-        '112 model yönlendirme katmanı, deterministik doğrulama ve düşük gecikmeli akış mimarisinin canlı demolarla inceleneceği teknik zirve.',
+        '115 model yönlendirme katmanı, deterministik doğrulama ve düşük gecikmeli akış mimarisinin canlı demolarla inceleneceği teknik zirve.',
       category: 'Konferans & Zirve',
       dateIso: '2026-11-06',
       startTime: '19:00',

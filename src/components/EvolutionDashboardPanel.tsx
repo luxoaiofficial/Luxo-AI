@@ -362,7 +362,7 @@ export const EvolutionDashboardPanel: React.FC<EvolutionDashboardPanelProps> = (
                 onClick={onOpenModelMetrics}
                 className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer whitespace-nowrap"
               >
-                Tüm 113 Model →
+                Tüm 115 Model →
               </button>
             )}
           </div>

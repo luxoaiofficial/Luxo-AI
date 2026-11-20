@@ -55,7 +55,7 @@ export function createInitialNotifications(
       id: 'notif-seed-sys-1',
       category: 'system_update',
       title: 'Otonom Gelişim v2 Güncellemesi',
-      body: 'Gemini 4 Hydrogen dahil 113 yapay zeka modeli arasında yanıt kalitesi ve gecikme optimizasyonu etkinleştirildi.',
+      body: 'Gemini 4 Hydrogen, Carbon ve Neon dahil 115 yapay zeka modeli arasında yanıt kalitesi ve gecikme optimizasyonu etkinleştirildi.',
       createdAt: now - 18 * 60 * 1000,
       read: false,
       targetView: 'evolution',

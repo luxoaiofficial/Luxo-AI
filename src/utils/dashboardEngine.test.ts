@@ -74,8 +74,8 @@ test('aggregatePersonalDashboardData summarizes project stats, library items, ar
   assert.equal(snap.stats.totalMessages, 2);
   assert.equal(snap.stats.favoriteLibraryCount, 1);
   assert.equal(snap.stats.publishedArticlesCount, 1);
-  assert.equal(snap.stats.totalModelsCount, 113);
-  assert.equal(snap.stats.enabledModelsCount, 113);
+  assert.equal(snap.stats.totalModelsCount, 115);
+  assert.equal(snap.stats.enabledModelsCount, 115);
   assert.equal(snap.pinnedWorkspaceDefs.length, 3);
   assert.ok(snap.modelAlerts.length >= 1);
 });

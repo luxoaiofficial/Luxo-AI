@@ -17,6 +17,8 @@ import {
   type PlatformEvent,
   type PlatformUserRole,
 } from '../utils/socialPlatformEngine';
+import { QuickSocialShareButtons } from './SocialShareBar';
+import { ContentRatingAndComments } from './ContentRatingAndComments';
 
 const MONTH_NAMES_TR = [
   'Ocak',
@@ -355,6 +357,23 @@ export const CalendarAnnouncementsTab: React.FC<CalendarAnnouncementsTabProps> =
                     <span>{item.secondaryMeta}</span>
                     <span>Yayınlayan: {item.createdByName}</span>
                   </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+                    <QuickSocialShareButtons
+                      compact
+                      payload={{
+                        title: item.title,
+                        excerpt: item.description,
+                        contentType: 'chat',
+                        badge: `${item.eventType} · LUXO TOPLULUK`,
+                      }}
+                    />
+                  </div>
+                  <ContentRatingAndComments
+                    compact
+                    contentKey={`${item.kind === 'event' ? 'event' : 'ann'}:${item.id}`}
+                    contentTitle={item.title}
+                  />
                 </article>
               );
             })}
@@ -558,13 +577,29 @@ export const CalendarAnnouncementsTab: React.FC<CalendarAnnouncementsTabProps> =
                         {ev.description}
                       </p>
 
-                      <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800/80 flex flex-wrap items-center gap-2 text-xs text-neutral-500 dark:text-neutral-400 tabular-nums">
-                        <span>Konum: {ev.location}</span>
-                        <span aria-hidden="true">·</span>
-                        <span>Konuşmacı: {ev.speakerName}</span>
-                        <span aria-hidden="true">·</span>
-                        <span>Kontenjan: {ev.capacity} kişi</span>
+                      <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800/80 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-500 dark:text-neutral-400 tabular-nums">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>Konum: {ev.location}</span>
+                          <span aria-hidden="true">·</span>
+                          <span>Konuşmacı: {ev.speakerName}</span>
+                          <span aria-hidden="true">·</span>
+                          <span>Kontenjan: {ev.capacity} kişi</span>
+                        </div>
+                        <QuickSocialShareButtons
+                          compact
+                          payload={{
+                            title: ev.title,
+                            excerpt: ev.description,
+                            contentType: 'chat',
+                            badge: `ETKİNLİK · ${ev.category}`,
+                          }}
+                        />
                       </div>
+                      <ContentRatingAndComments
+                        compact
+                        contentKey={`event:${ev.id}`}
+                        contentTitle={ev.title}
+                      />
                     </article>
                   );
                 })}
@@ -659,16 +694,32 @@ export const CalendarAnnouncementsTab: React.FC<CalendarAnnouncementsTabProps> =
                       {ann.summary}
                     </p>
 
-                    <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800/80 flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400 tabular-nums">
+                    <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800/80 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-500 dark:text-neutral-400 tabular-nums">
                       <span>Yayınlayan: {ann.createdByName}</span>
-                      <span>
-                        {new Date(ann.createdAt).toLocaleDateString('tr-TR', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                        })}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span>
+                          {new Date(ann.createdAt).toLocaleDateString('tr-TR', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                          })}
+                        </span>
+                        <QuickSocialShareButtons
+                          compact
+                          payload={{
+                            title: ann.title,
+                            excerpt: ann.summary,
+                            contentType: 'chat',
+                            badge: `DUYURU · ${ann.priority}`,
+                          }}
+                        />
+                      </div>
                     </div>
+                    <ContentRatingAndComments
+                      compact
+                      contentKey={`ann:${ann.id}`}
+                      contentTitle={ann.title}
+                    />
                   </article>
                 );
               })}

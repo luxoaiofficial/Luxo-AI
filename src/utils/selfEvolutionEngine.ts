@@ -5,6 +5,7 @@ import type {
   EvolutionCycleLog,
   EvolutionCycleMetric,
   EvolutionLearnedRule,
+  EvolutionModelMetric,
   LuxoModelCategory,
   LuxoModelConfig,
   LuxoModelId,
@@ -25,11 +26,11 @@ const ALL_CATEGORIES: {
 }[] = [
   {
     category: 'Google Gemini',
-    modelCount: 17,
+    modelCount: 19,
     baseScore: 98.8,
     baseLatencyMs: 620,
     initialNote:
-      'Gemini 4 Hydrogen, Gemini 4 Argon ve 3.8 Flash akış zaman aşımı ve çok adımlı muhakeme doğrulaması optimize edildi.',
+      'Gemini 4 Hydrogen, Carbon, Neon, Argon ve 3.8 Flash akış zaman aşımı ve çok adımlı muhakeme doğrulaması optimize edildi.',
   },
   {
     category: 'OpenAI & ChatGPT',
@@ -93,7 +94,7 @@ const ALL_CATEGORIES: {
     baseScore: 99.1,
     baseLatencyMs: 590,
     initialNote:
-      'Luxo Auto-Router 113 model arası alan sınıflandırması ve öz-denetimli hata yakalama motoru aktif.',
+      'Luxo Auto-Router 115 model arası alan sınıflandırması ve öz-denetimli hata yakalama motoru aktif.',
   },
 ];
 
@@ -195,7 +196,7 @@ export function createInitialEvolutionState(now = Date.now()): SelfEvolutionStat
         'Uzun kod ve mimari yanıtlarında erken cümle kesilmesi ve model geçişlerinde gecikme saptandı.',
       appliedPatch:
         'Akış zaman aşımı eşiği dengelendi, kapanmamış kod blokları için otomatik onarım ve çok katmanlı yedekleme devreye alındı.',
-      verifiedGain: '113 modelde %0 kesik yanıt · +1.5 doğruluk artışı',
+      verifiedGain: '115 modelde %0 kesik yanıt · +1.5 doğruluk artışı',
     },
   ];
 
@@ -284,6 +285,8 @@ export function createInitialEvolutionState(now = Date.now()): SelfEvolutionStat
   const initialUsageCounts: Record<string, number> = {
     'gemini-4-argon': 142,
     'gemini-4-hydrogen': 118,
+    'gemini-4-carbon': 104,
+    'gemini-4-neon': 92,
     'claude-4-5-sonnet': 96,
     'chatgpt-5-2-pro': 88,
     'luxo-auto-router': 74,
@@ -292,6 +295,86 @@ export function createInitialEvolutionState(now = Date.now()): SelfEvolutionStat
     'qwen-3-coder-plus': 44,
     'perplexity-sonar-pro': 38,
     'grok-4-heavy': 29,
+  };
+
+  const initialModelMetrics: Record<string, EvolutionModelMetric> = {
+    'gemini-4-argon': {
+      modelId: 'gemini-4-argon',
+      latencyMs: 580,
+      successRate: 99.2,
+      callCount: 142,
+      lastUsedAt: now - 40_000,
+    },
+    'gemini-4-hydrogen': {
+      modelId: 'gemini-4-hydrogen',
+      latencyMs: 640,
+      successRate: 99.4,
+      callCount: 118,
+      lastUsedAt: now - 55_000,
+    },
+    'gemini-4-carbon': {
+      modelId: 'gemini-4-carbon',
+      latencyMs: 615,
+      successRate: 99.1,
+      callCount: 104,
+      lastUsedAt: now - 70_000,
+    },
+    'gemini-4-neon': {
+      modelId: 'gemini-4-neon',
+      latencyMs: 495,
+      successRate: 99.0,
+      callCount: 92,
+      lastUsedAt: now - 85_000,
+    },
+    'claude-4-5-sonnet': {
+      modelId: 'claude-4-5-sonnet',
+      latencyMs: 690,
+      successRate: 98.9,
+      callCount: 96,
+      lastUsedAt: now - 110_000,
+    },
+    'chatgpt-5-2-pro': {
+      modelId: 'chatgpt-5-2-pro',
+      latencyMs: 710,
+      successRate: 98.6,
+      callCount: 88,
+      lastUsedAt: now - 140_000,
+    },
+    'luxo-auto-router': {
+      modelId: 'luxo-auto-router',
+      latencyMs: 540,
+      successRate: 99.3,
+      callCount: 74,
+      lastUsedAt: now - 160_000,
+    },
+    'deepseek-r2': {
+      modelId: 'deepseek-r2',
+      latencyMs: 655,
+      successRate: 98.5,
+      callCount: 63,
+      lastUsedAt: now - 190_000,
+    },
+    'qwen-3-coder-plus': {
+      modelId: 'qwen-3-coder-plus',
+      latencyMs: 560,
+      successRate: 98.4,
+      callCount: 44,
+      lastUsedAt: now - 210_000,
+    },
+    'perplexity-sonar-pro': {
+      modelId: 'perplexity-sonar-pro',
+      latencyMs: 760,
+      successRate: 98.2,
+      callCount: 38,
+      lastUsedAt: now - 240_000,
+    },
+    'grok-4-heavy': {
+      modelId: 'grok-4-heavy',
+      latencyMs: 685,
+      successRate: 97.9,
+      callCount: 29,
+      lastUsedAt: now - 280_000,
+    },
   };
 
   const initialHistory: EvolutionCycleMetric[] = [
@@ -336,6 +419,7 @@ export function createInitialEvolutionState(now = Date.now()): SelfEvolutionStat
     ecosystems,
     modelBoosts: {},
     modelUsageCounts: initialUsageCounts,
+    modelMetrics: initialModelMetrics,
     cycleHistory: initialHistory,
     benchmarkResults: initialBenchmarks,
     recentLogs,
@@ -373,6 +457,10 @@ export function hydrateEvolutionState(
       raw.modelUsageCounts && typeof raw.modelUsageCounts === 'object'
         ? { ...fallback.modelUsageCounts, ...raw.modelUsageCounts }
         : fallback.modelUsageCounts,
+    modelMetrics:
+      raw.modelMetrics && typeof raw.modelMetrics === 'object'
+        ? { ...(fallback.modelMetrics || {}), ...raw.modelMetrics }
+        : fallback.modelMetrics,
     cycleHistory:
       Array.isArray(raw.cycleHistory) && raw.cycleHistory.length > 0
         ? raw.cycleHistory
@@ -739,10 +827,10 @@ export function calibrateAllEcosystems(
     trigger: 'full-audit',
     targetCategory: 'Tüm Modeller',
     challengerFinding:
-      '9 ekosistemdeki 113 model üzerinde yanıt hızı, Türkçe imla ve kod bütünlüğü taraması yürütüldü.',
+      '9 ekosistemdeki 115 model üzerinde yanıt hızı, Türkçe imla ve kod bütünlüğü taraması yürütüldü.',
     appliedPatch:
       'Soğuma süreleri temizlendi, Auto-Router ağırlıkları ve yedek model geçiş eşikleri kalibre edildi.',
-    verifiedGain: '113/113 Model Sağlıklı · Ortalama -18ms gecikme iyileşmesi',
+    verifiedGain: '115/115 Model Sağlıklı · Ortalama -18ms gecikme iyileşmesi',
   };
 
   const nextBugsPatched = prevState.totalBugsPatched + 9;
@@ -1566,6 +1654,19 @@ export function processModelFeedbackSignal(
     }% doğruluk · ${signal.rating}`,
   };
 
+  const currentMetrics = { ...(hydrated.modelMetrics || {}) };
+  const prevMetric = currentMetrics[signal.modelId];
+  if (prevMetric) {
+    const nextRate = isThumbsUp
+      ? Math.min(99.9, prevMetric.successRate + 0.1)
+      : Math.max(85.0, prevMetric.successRate - 0.6);
+    currentMetrics[signal.modelId] = {
+      ...prevMetric,
+      successRate: Math.round(nextRate * 10) / 10,
+      lastUsedAt: now,
+    };
+  }
+
   return {
     ...hydrated,
     generation: nextGen,
@@ -1578,6 +1679,7 @@ export function processModelFeedbackSignal(
       ...(hydrated.modelBoosts || {}),
       [signal.modelId]: updatedBoost,
     },
+    modelMetrics: currentMetrics,
     cycleHistory: appendCycleHistoryMetric(
       hydrated.cycleHistory,
       nextEcosystems,
@@ -1594,14 +1696,64 @@ export function processModelFeedbackSignal(
 export function recordModelUsageInState(
   prevState: SelfEvolutionState,
   modelId: LuxoModelId | string,
-  now = Date.now()
+  telemetryOrNow:
+    | number
+    | { latencyMs?: number; success?: boolean; now?: number } = Date.now(),
+  nowOverride?: number
 ): SelfEvolutionState {
+  const telemetry =
+    typeof telemetryOrNow === 'object' && telemetryOrNow !== null
+      ? telemetryOrNow
+      : undefined;
+  const now =
+    typeof telemetryOrNow === 'number'
+      ? telemetryOrNow
+      : nowOverride ?? telemetry?.now ?? Date.now();
   const hydrated = hydrateEvolutionState(prevState, now);
   const currentCounts = { ...(hydrated.modelUsageCounts || {}) };
-  currentCounts[modelId] = (currentCounts[modelId] || 0) + 1;
+  const nextCount = (currentCounts[modelId] || 0) + 1;
+  currentCounts[modelId] = nextCount;
+
+  const currentMetrics = { ...(hydrated.modelMetrics || {}) };
+  const existingMetric = currentMetrics[modelId] || {
+    modelId,
+    latencyMs: 620,
+    successRate: 98.5,
+    callCount: Math.max(0, nextCount - 1),
+    lastUsedAt: now,
+  };
+
+  const sampleLatency =
+    typeof telemetry?.latencyMs === 'number' && telemetry.latencyMs > 0
+      ? Math.round(Math.min(12000, Math.max(120, telemetry.latencyMs)))
+      : existingMetric.latencyMs;
+  const nextLatency =
+    typeof telemetry?.latencyMs === 'number'
+      ? Math.round(existingMetric.latencyMs * 0.7 + sampleLatency * 0.3)
+      : existingMetric.latencyMs;
+  const sampleSuccess =
+    typeof telemetry?.success === 'boolean'
+      ? telemetry.success
+        ? 100
+        : 0
+      : existingMetric.successRate;
+  const nextSuccessRate =
+    typeof telemetry?.success === 'boolean'
+      ? Math.round((existingMetric.successRate * 0.9 + sampleSuccess * 0.1) * 10) / 10
+      : existingMetric.successRate;
+
+  currentMetrics[modelId] = {
+    modelId,
+    latencyMs: nextLatency,
+    successRate: nextSuccessRate,
+    callCount: Math.max(nextCount, existingMetric.callCount + 1),
+    lastUsedAt: now,
+  };
+
   return {
     ...hydrated,
     modelUsageCounts: currentCounts,
+    modelMetrics: currentMetrics,
     lastUpdatedAt: now,
   };
 }

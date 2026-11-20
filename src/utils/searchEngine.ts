@@ -10,7 +10,12 @@ export type SearchItemCategory =
   | 'event';
 
 export type SearchDateRange = 'all' | '24h' | '7d' | '30d';
-export type SearchSortBy = 'relevance' | 'date_desc' | 'date_asc' | 'title_asc';
+export type SearchSortBy =
+  | 'relevance'
+  | 'date_desc'
+  | 'date_asc'
+  | 'rating_desc'
+  | 'title_asc';
 
 export interface SearchableItem {
   id: string;
@@ -19,6 +24,10 @@ export interface SearchableItem {
   category: SearchItemCategory;
   timestamp: number;
   keywords: string[];
+  tags?: string[];
+  ratingAvg?: number;
+  ratingCount?: number;
+  publishedIso?: string;
   badge?: string;
   modelId?: LuxoModelId;
   actionId?: string;
@@ -32,6 +41,10 @@ export interface SearchQueryOptions {
   category: SearchItemCategory | 'all';
   dateRange: SearchDateRange;
   sortBy: SearchSortBy;
+  tag?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  minRating?: number;
   now?: number;
 }
 
@@ -61,6 +74,7 @@ function scoreItemMatch(item: SearchableItem, tokens: string[], rawQuery: string
   const subLower = item.subtitle.toLowerCase();
   const badgeLower = (item.badge || '').toLowerCase();
   const kwLower = item.keywords.map((k) => k.toLowerCase());
+  const tagsLower = (item.tags || []).map((t) => t.toLowerCase());
 
   if (titleLower === rawQuery) return 120;
 
@@ -77,6 +91,11 @@ function scoreItemMatch(item: SearchableItem, tokens: string[], rawQuery: string
 
     if (badgeLower.includes(token)) {
       score += 18;
+      tokenMatched = true;
+    }
+
+    if (tagsLower.some((tg) => tg.includes(token))) {
+      score += 16;
       tokenMatched = true;
     }
 
@@ -99,6 +118,13 @@ function scoreItemMatch(item: SearchableItem, tokens: string[], rawQuery: string
   return score;
 }
 
+function parseBoundaryMs(isoDate: string | undefined, endOfDay: boolean): number | null {
+  const clean = (isoDate || '').trim();
+  if (!clean) return null;
+  const parsed = Date.parse(endOfDay ? `${clean}T23:59:59.999Z` : `${clean}T00:00:00.000Z`);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export function executeEnhancedSearch(
   items: SearchableItem[],
   options: SearchQueryOptions
@@ -106,9 +132,16 @@ export function executeEnhancedSearch(
   const now = options.now ?? Date.now();
   const cleanQuery = (options.query || '').trim().toLowerCase();
   const tokens = cleanQuery.split(/\s+/).filter(Boolean);
+  const targetTag = (options.tag || '').trim().toLowerCase();
+  const minRating =
+    typeof options.minRating === 'number' && options.minRating > 0
+      ? options.minRating
+      : 0;
 
   const windowMs =
     options.dateRange === 'all' ? null : DATE_WINDOW_MS[options.dateRange];
+  const fromMs = parseBoundaryMs(options.dateFrom, false);
+  const toMs = parseBoundaryMs(options.dateTo, true);
 
   const matched: RankedSearchResult[] = [];
 
@@ -116,7 +149,27 @@ export function executeEnhancedSearch(
     if (options.category !== 'all' && item.category !== options.category) {
       continue;
     }
-    if (windowMs !== null && now - item.timestamp > windowMs) {
+    const itemDateMs = item.publishedIso
+      ? parseBoundaryMs(item.publishedIso, false) ?? item.timestamp
+      : item.timestamp;
+    if (windowMs !== null && now - itemDateMs > windowMs) {
+      continue;
+    }
+    if (fromMs !== null && itemDateMs < fromMs) {
+      continue;
+    }
+    if (toMs !== null && itemDateMs > toMs) {
+      continue;
+    }
+    if (targetTag && targetTag !== 'all') {
+      const combinedTags = [...(item.tags || []), ...item.keywords].map((t) =>
+        t.toLowerCase()
+      );
+      if (!combinedTags.some((t) => t === targetTag || t.includes(targetTag))) {
+        continue;
+      }
+    }
+    if (minRating > 0 && (item.ratingAvg ?? 0) < minRating) {
       continue;
     }
 
@@ -133,6 +186,11 @@ export function executeEnhancedSearch(
     if (options.sortBy === 'date_asc') {
       return a.item.timestamp - b.item.timestamp || b.score - a.score;
     }
+    if (options.sortBy === 'rating_desc') {
+      const diff = (b.item.ratingAvg ?? 0) - (a.item.ratingAvg ?? 0);
+      if (diff !== 0) return diff;
+      return (b.item.ratingCount ?? 0) - (a.item.ratingCount ?? 0) || b.score - a.score;
+    }
     if (options.sortBy === 'title_asc') {
       return a.item.title.localeCompare(b.item.title, 'tr');
     }
@@ -144,6 +202,31 @@ export function executeEnhancedSearch(
   return matched;
 }
 
+export function extractAvailableTags(
+  items: SearchableItem[],
+  limit = 14
+): string[] {
+  const freq = new Map<string, { label: string; count: number }>();
+  for (const item of items) {
+    const rawTags = item.tags && item.tags.length > 0 ? item.tags : item.keywords.slice(0, 3);
+    for (const raw of rawTags) {
+      const clean = raw.trim();
+      if (clean.length < 2) continue;
+      const key = clean.toLowerCase();
+      const existing = freq.get(key);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        freq.set(key, { label: clean, count: 1 });
+      }
+    }
+  }
+  return Array.from(freq.values())
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'tr'))
+    .slice(0, limit)
+    .map((entry) => entry.label);
+}
+
 export function buildSearchSuggestions(
   items: SearchableItem[],
   query: string,
@@ -153,11 +236,11 @@ export function buildSearchSuggestions(
 
   if (!clean) {
     const popularSeeds: SearchSuggestion[] = [
-      { text: 'Gemini 4 Argon', category: 'model', matchCount: 1 },
+      { text: 'Gemini 4 Carbon', category: 'model', matchCount: 1 },
+      { text: 'Gemini 4 Neon', category: 'model', matchCount: 1 },
       { text: 'GitHub', category: 'action', matchCount: 1 },
       { text: 'Anket', category: 'community', matchCount: 1 },
       { text: 'Forum', category: 'community', matchCount: 1 },
-      { text: 'Otonom Gelişim', category: 'action', matchCount: 1 },
       { text: 'SEO', category: 'community', matchCount: 1 },
     ];
     return popularSeeds.slice(0, limit);
@@ -166,7 +249,7 @@ export function buildSearchSuggestions(
   const seen = new Map<string, SearchSuggestion>();
 
   for (const item of items) {
-    const candidates = [item.title, ...item.keywords];
+    const candidates = [item.title, ...(item.tags || []), ...item.keywords];
     for (const rawCand of candidates) {
       const cand = rawCand.trim();
       if (cand.length < 2) continue;

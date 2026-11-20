@@ -108,6 +108,7 @@ import { TrainingConsentBanner } from './components/TrainingConsentBanner';
 import { retryDynamicImport } from './utils/moduleLoader';
 import type { HubTabId } from './components/CommunitySeoHub';
 import { VoiceCommandModal } from './components/VoiceCommandModal';
+import { GmailWorkspaceModal } from './components/GmailWorkspaceModal';
 
 const ArgonCodeStudio = React.lazy(() =>
   retryDynamicImport(() =>
@@ -178,6 +179,7 @@ import {
   hydrateEvolutionState,
   normalizeConsentStatus,
   processModelFeedbackSignal,
+  recordModelUsageInState,
   TRAINING_CONSENT_STORAGE_KEY,
 } from './utils/selfEvolutionEngine';
 import {
@@ -516,6 +518,7 @@ export default function App() {
     });
 
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isGmailModalOpen, setIsGmailModalOpen] = useState(false);
 
   const unreadNotificationCount = getUnreadNotificationCount(
     notifications,
@@ -1766,6 +1769,9 @@ export default function App() {
       }
     }
 
+    const chatRequestStartMs = Date.now();
+    let recordedChatTelemetry = false;
+
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -1835,6 +1841,21 @@ export default function App() {
                   finalThinkingSteps = parsed.meta.thinkingSteps;
                   finalCitations = parsed.meta.citations;
                   finalFollowUps = parsed.meta.followUpSuggestions;
+                  if (!recordedChatTelemetry) {
+                    recordedChatTelemetry = true;
+                    const measuredLatencyMs =
+                      typeof parsed.meta.latencyMs === 'number'
+                        ? parsed.meta.latencyMs
+                        : Math.max(120, Date.now() - chatRequestStartMs);
+                    const telemetryModel = (parsed.meta.resolvedModel ||
+                      activeModelId) as LuxoModelId;
+                    setEvolutionState((prev) =>
+                      recordModelUsageInState(prev, telemetryModel, {
+                        latencyMs: measuredLatencyMs,
+                        success: true,
+                      })
+                    );
+                  }
                 }
                 if (parsed.text) {
                   finalAssistantText += sanitizeLuxoBrand(parsed.text);
@@ -1874,6 +1895,21 @@ export default function App() {
         finalThinkingSteps = data.thinkingSteps;
         finalCitations = data.citations;
         finalFollowUps = data.followUpSuggestions;
+        if (!recordedChatTelemetry) {
+          recordedChatTelemetry = true;
+          const measuredLatencyMs =
+            typeof data.latencyMs === 'number'
+              ? data.latencyMs
+              : Math.max(120, Date.now() - chatRequestStartMs);
+          const telemetryModel = (data.resolvedModel ||
+            activeModelId) as LuxoModelId;
+          setEvolutionState((prev) =>
+            recordModelUsageInState(prev, telemetryModel, {
+              latencyMs: measuredLatencyMs,
+              success: true,
+            })
+          );
+        }
         setChats((prev) =>
           prev.map((c) =>
             c.id === targetChatId
@@ -2842,6 +2878,7 @@ export default function App() {
               }}
               onOpenVoiceCommands={() => setIsVoiceCommandModalOpen(true)}
               onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+              onOpenGmail={() => setIsGmailModalOpen(true)}
               onOpenAuthModal={() => setIsAuthModalOpen(true)}
               onSignOut={handleSignOut}
             />
@@ -2969,6 +3006,7 @@ export default function App() {
               onClearAllChats={() => setChats([])}
               unreadNotificationCount={unreadNotificationCount}
               onOpenNotifications={() => setIsNotificationsOpen(true)}
+              onOpenGmail={() => setIsGmailModalOpen(true)}
               onResendVerification={async () => {
                 await resendVerificationEmail();
               }}
@@ -3036,6 +3074,7 @@ export default function App() {
             setCurrentView('hub');
           }}
           onOpenSocial={() => setCurrentView('social')}
+          onOpenGmail={() => setIsGmailModalOpen(true)}
           onOpenLibrary={() => setCurrentView('library')}
           onOpenProjects={() => setCurrentView('projects')}
           onOpenStudio={() => setCurrentView('studio')}
@@ -3278,6 +3317,11 @@ export default function App() {
           }}
         />
 
+        <GmailWorkspaceModal
+          isOpen={isGmailModalOpen}
+          onClose={() => setIsGmailModalOpen(false)}
+        />
+
         {pendingVeoRequest && (
           <CinematicMotionController
             mode="modal"
@@ -3322,16 +3366,16 @@ export default function App() {
         <nav
           data-testid="mobile-bottom-nav"
           aria-label="Mobil Alt Gezinme Çubuğu"
-          className="md:hidden shrink-0 h-14 bg-white dark:bg-[#18191d] border-t border-neutral-200 dark:border-neutral-800 grid grid-cols-5 items-center px-1 z-30"
+          className="md:hidden shrink-0 h-16 bg-white/95 dark:bg-[#14151a]/95 backdrop-blur-md border-t border-neutral-200/80 dark:border-neutral-800 grid grid-cols-5 items-center px-1.5 pb-1 z-30 shadow-[0_-4px_20px_rgba(0,0,0,0.04)]"
         >
           <button
             type="button"
             data-testid="mobile-nav-chat-btn"
             onClick={() => setCurrentView('chat')}
-            className={`min-h-[44px] h-full flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition cursor-pointer ${
+            className={`min-h-[44px] h-12 rounded-2xl flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition active:scale-95 cursor-pointer ${
               currentView === 'chat'
-                ? 'text-blue-600 dark:text-blue-400'
-                : 'text-neutral-500 dark:text-neutral-400'
+                ? 'bg-blue-600/10 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100/70 dark:hover:bg-neutral-800/60'
             }`}
           >
             <MessageSquare className="w-4 h-4" />
@@ -3342,10 +3386,10 @@ export default function App() {
             type="button"
             data-testid="mobile-nav-search-btn"
             onClick={() => setIsCommandPaletteOpen(true)}
-            className={`min-h-[44px] h-full flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition cursor-pointer ${
+            className={`min-h-[44px] h-12 rounded-2xl flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition active:scale-95 cursor-pointer ${
               isCommandPaletteOpen
-                ? 'text-blue-600 dark:text-blue-400'
-                : 'text-neutral-500 dark:text-neutral-400'
+                ? 'bg-blue-600/10 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100/70 dark:hover:bg-neutral-800/60'
             }`}
           >
             <Search className="w-4 h-4" />
@@ -3359,10 +3403,10 @@ export default function App() {
               setHubInitialTab('blog-polls');
               setCurrentView('hub');
             }}
-            className={`min-h-[44px] h-full flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition cursor-pointer ${
+            className={`min-h-[44px] h-12 rounded-2xl flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition active:scale-95 cursor-pointer ${
               currentView === 'hub'
-                ? 'text-blue-600 dark:text-blue-400'
-                : 'text-neutral-500 dark:text-neutral-400'
+                ? 'bg-blue-600/10 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100/70 dark:hover:bg-neutral-800/60'
             }`}
           >
             <Globe className="w-4 h-4" />
@@ -3373,10 +3417,10 @@ export default function App() {
             type="button"
             data-testid="mobile-nav-dashboard-btn"
             onClick={() => handleOpenDashboard('overview')}
-            className={`min-h-[44px] h-full flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition cursor-pointer ${
+            className={`min-h-[44px] h-12 rounded-2xl flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition active:scale-95 cursor-pointer ${
               currentView === 'dashboard'
-                ? 'text-blue-600 dark:text-blue-400'
-                : 'text-neutral-500 dark:text-neutral-400'
+                ? 'bg-blue-600/10 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100/70 dark:hover:bg-neutral-800/60'
             }`}
           >
             <LayoutDashboard className="w-4 h-4" />
@@ -3390,10 +3434,10 @@ export default function App() {
               setSettingsSubModal(null);
               setCurrentView('settings');
             }}
-            className={`min-h-[44px] h-full flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition cursor-pointer ${
+            className={`min-h-[44px] h-12 rounded-2xl flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition active:scale-95 cursor-pointer ${
               currentView === 'settings'
-                ? 'text-blue-600 dark:text-blue-400'
-                : 'text-neutral-500 dark:text-neutral-400'
+                ? 'bg-blue-600/10 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100/70 dark:hover:bg-neutral-800/60'
             }`}
           >
             <Settings className="w-4 h-4" />

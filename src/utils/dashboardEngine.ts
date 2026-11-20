@@ -27,7 +27,7 @@ export const AVAILABLE_WORKSPACES: WorkspaceDefinition[] = [
   {
     id: 'chat',
     title: 'AI Sohbet Stüdyosu',
-    subtitle: '113 yapay zeka modeli & karşılaştırma',
+    subtitle: '115 yapay zeka modeli & karşılaştırma',
     accentHex: '#2563eb',
     defaultPinned: true,
   },

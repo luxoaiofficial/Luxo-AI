@@ -435,10 +435,12 @@ test('videoEngine scene archetypes, default specs, and WAV score synthesis work 
   assert.equal(showcaseVideo?.videoUrl, '/api/videos/showcase-veo.mp4');
 });
 
-test('All 113 selectable AI models across 9 provider ecosystems (10 tabs), Nano Banana panoramic ratios, and High-Fidelity 4K 60fps video metrics work end-to-end', () => {
-  assert.equal(LUXO_MODEL_IDS.length, 113);
+test('All 115 selectable AI models across 9 provider ecosystems (10 tabs), Nano Banana panoramic ratios, and High-Fidelity 4K 60fps video metrics work end-to-end', () => {
+  assert.equal(LUXO_MODEL_IDS.length, 115);
   assert.equal(LUXO_MODEL_CATEGORIES.length, 10);
   assert.ok(LUXO_MODELS['gemini-4-hydrogen']);
+  assert.ok(LUXO_MODELS['gemini-4-carbon']);
+  assert.ok(LUXO_MODELS['gemini-4-neon']);
   assert.equal(LUXO_MODELS['gemini-4-hydrogen'].name, 'Gemini 4 Hydrogen');
   assert.ok(buildSystemPrompt('gemini-4-hydrogen').includes('HYDROGEN'));
 
@@ -860,8 +862,8 @@ test('Linear & quadratic equation solver, multi-turn context inheritance, coder 
   }
 });
 
-test('All 113 models support precision tuning options and verifyAndRepairModelOutput auto-closes unclosed code fences', () => {
-  assert.equal(LUXO_MODEL_IDS.length, 113);
+test('All 115 models support precision tuning options and verifyAndRepairModelOutput auto-closes unclosed code fences', () => {
+  assert.equal(LUXO_MODEL_IDS.length, 115);
   assert.ok(LUXO_MODELS['gemini-4-hydrogen']);
 
   const hydrogenSys = buildSystemPrompt('gemini-4-hydrogen', {

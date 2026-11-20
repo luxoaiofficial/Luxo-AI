@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   LogIn,
   LogOut,
+  Mail,
   MessageSquare,
   Mic,
   Moon,
@@ -42,6 +43,7 @@ import {
 } from '../utils/dashboardEngine';
 import type { PublishedStudioArticle } from '../utils/contentStudioEngine';
 import { LiveModelTelemetryChart } from './LiveModelTelemetryChart';
+import { PerformanceInsightsCard } from './PerformanceInsightsCard';
 import { ModelPerformanceMetricsPanel } from './ModelPerformanceMetricsPanel';
 
 interface PersonalDashboardViewProps {
@@ -68,6 +70,7 @@ interface PersonalDashboardViewProps {
   onOpenLibraryItemInChat: (title: string, content: string) => void;
   onOpenVoiceCommands: () => void;
   onOpenCommandPalette?: () => void;
+  onOpenGmail?: () => void;
   onOpenAuthModal: () => void;
   onSignOut: () => void;
 }
@@ -118,6 +121,7 @@ export const PersonalDashboardView: React.FC<PersonalDashboardViewProps> = ({
   onOpenLibraryItemInChat,
   onOpenVoiceCommands,
   onOpenCommandPalette,
+  onOpenGmail,
   onOpenAuthModal,
   onSignOut,
 }) => {
@@ -238,6 +242,17 @@ export const PersonalDashboardView: React.FC<PersonalDashboardViewProps> = ({
               className="w-11 h-11 sm:w-8 sm:h-8 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 flex items-center justify-center transition cursor-pointer shrink-0"
             >
               <Search className="w-4 h-4 text-neutral-700 dark:text-neutral-300" />
+            </button>
+          )}
+          {onOpenGmail && (
+            <button
+              type="button"
+              data-testid="dashboard-gmail-btn"
+              onClick={onOpenGmail}
+              className="min-h-[44px] sm:min-h-0 px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-800 dark:text-neutral-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
+            >
+              <Mail className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-rose-500" />
+              <span className="hidden sm:inline">Gmail</span>
             </button>
           )}
           <button
@@ -646,7 +661,13 @@ export const PersonalDashboardView: React.FC<PersonalDashboardViewProps> = ({
             </section>
           </div>
 
-          {/* Dedicated All-113 Model Performance Metrics Panel */}
+          {/* D3-Based Performance Insights Card */}
+          <PerformanceInsightsCard
+            modelMetrics={evolutionState.modelMetrics}
+            onSelectModel={(modelId) => onSelectModel(modelId as LuxoModelId)}
+          />
+
+          {/* Dedicated All-115 Model Performance Metrics Panel */}
           <ModelPerformanceMetricsPanel
             evolutionState={evolutionState}
             activeModelId={activeModelId}

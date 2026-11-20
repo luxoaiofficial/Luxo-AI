@@ -23,6 +23,8 @@ import {
   slugifyStudioText,
   validateAndBuildStudioArticle,
 } from '../utils/contentStudioEngine';
+import { QuickSocialShareButtons } from './SocialShareBar';
+import { ContentRatingAndComments } from './ContentRatingAndComments';
 
 interface ContentStudioWorkspaceProps {
   studioArticles: PublishedStudioArticle[];
@@ -1200,6 +1202,15 @@ export const ContentStudioWorkspace: React.FC<ContentStudioWorkspaceProps> = ({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <QuickSocialShareButtons
+                    compact
+                    payload={{
+                      title: art.title,
+                      excerpt: art.metaDescription || art.summary,
+                      contentType: 'blog',
+                      badge: `CMS · ${art.category}`,
+                    }}
+                  />
                   {art.status === 'published' && (
                     <button
                       type="button"
@@ -1225,6 +1236,13 @@ export const ContentStudioWorkspace: React.FC<ContentStudioWorkspaceProps> = ({
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
+                </div>
+                <div className="w-full pt-2">
+                  <ContentRatingAndComments
+                    compact
+                    contentKey={`cms:${art.id}`}
+                    contentTitle={art.title}
+                  />
                 </div>
               </article>
             ))}

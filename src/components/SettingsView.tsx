@@ -22,6 +22,7 @@ import {
   Info,
   KeyRound,
   LogOut,
+  Mail,
   MailCheck,
   Megaphone,
   Mic,
@@ -78,6 +79,7 @@ interface SettingsViewProps {
   onClearAllChats: () => void;
   unreadNotificationCount?: number;
   onOpenNotifications?: () => void;
+  onOpenGmail?: () => void;
   onResendVerification?: () => Promise<void>;
   onRefreshVerification?: () => Promise<boolean>;
   onPasswordResetRequest?: () => void;
@@ -99,6 +101,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onClearAllChats,
   unreadNotificationCount = 0,
   onOpenNotifications,
+  onOpenGmail,
   onResendVerification,
   onRefreshVerification,
   onPasswordResetRequest,
@@ -1421,7 +1424,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 Yanıt Yoğunluğu &amp; Kod Mühendisliği
               </span>
               <span className="text-xs text-neutral-500">
-                113 yapay zeka modelinin tamamı için çıktı biçimi ve otomatik kalite doğrulaması
+                115 yapay zeka modelinin tamamı için çıktı biçimi ve otomatik kalite doğrulaması
               </span>
             </div>
 
@@ -1949,7 +1952,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       )}
 
-      <header className="flex items-center justify-between px-4 py-3 bg-white dark:bg-[#000000] border-b border-neutral-200/60 dark:border-neutral-900 shrink-0">
+      <header className="flex items-center justify-between px-4 py-3 bg-white/90 dark:bg-[#09090b]/90 backdrop-blur-md border-b border-neutral-200/60 dark:border-neutral-900 shrink-0">
         <button
           type="button"
           onClick={onBack}
@@ -1958,11 +1961,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <h2 className="text-base font-bold tracking-tight">Ayarlar</h2>
+        <div className="text-center">
+          <h2 className="text-base font-bold tracking-tight">Ayarlar</h2>
+          <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+            Hesap, Workspace &amp; AI Tercihleri
+          </p>
+        </div>
         <div className="w-11 sm:w-10" />
       </header>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6 pb-24 max-w-xl mx-auto w-full">
+      {/* Top Sticky Search Bar for Instant Setting Filtering */}
+      <div className="px-4 py-2.5 bg-white/80 dark:bg-[#09090b]/80 backdrop-blur-md border-b border-neutral-200/60 dark:border-neutral-900 shrink-0">
+        <div className="flex items-center gap-2.5 px-4 py-2 bg-neutral-100/90 dark:bg-[#18181b] rounded-2xl border border-neutral-200/80 dark:border-neutral-800 focus-within:border-blue-500/60 focus-within:ring-2 focus-within:ring-blue-500/15 transition max-w-xl mx-auto w-full">
+          <Search className="w-4 h-4 text-neutral-400 shrink-0" />
+          <input
+            type="text"
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            placeholder="Ayar ara (Gmail, Tema, GitHub, AI Model...)"
+            aria-label="Ayar ara"
+            data-testid="settings-search-input"
+            className="flex-1 bg-transparent text-sm text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-hidden"
+          />
+          {searchFilter && (
+            <button
+              type="button"
+              onClick={() => setSearchFilter('')}
+              className="text-neutral-400 hover:text-black dark:hover:text-white cursor-pointer"
+              aria-label="Aramayı Temizle"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6 pb-20 max-w-xl mx-auto w-full">
         {/* Standalone Direct Link Hero Card */}
         <div className="bg-gradient-to-br from-blue-600/10 via-indigo-600/10 to-purple-600/10 dark:from-blue-950/40 dark:via-indigo-950/30 dark:to-purple-950/40 rounded-3xl p-5 border border-blue-200 dark:border-blue-800/60 shadow-xs space-y-3.5">
           <div className="flex items-start justify-between gap-3">
@@ -2329,6 +2363,38 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             Hesap
           </h3>
           <div className="bg-white dark:bg-[#18181b] rounded-3xl overflow-hidden border border-neutral-200/80 dark:border-neutral-800 divide-y divide-neutral-100 dark:divide-neutral-800/80 shadow-xs">
+            {(matchesSearch('Gmail') ||
+              matchesSearch('Google Workspace') ||
+              matchesSearch('E-posta')) &&
+              onOpenGmail && (
+                <button
+                  type="button"
+                  data-testid="settings-nav-gmail-btn"
+                  onClick={onOpenGmail}
+                  className="w-full min-h-[56px] flex items-center justify-between p-4 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition cursor-pointer text-left"
+                >
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-rose-500/12 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                      <Mail className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-sm font-medium block truncate">
+                        Google Workspace · Gmail
+                      </span>
+                      <span className="text-[11px] text-neutral-400 block truncate">
+                        Gelen kutusu, yıldızlı e-postalar ve güvenli e-posta gönderimi
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[10px] font-bold">
+                      OAuth
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-neutral-400" />
+                  </div>
+                </button>
+              )}
+
             {matchesSearch('Google Bulut Hesabı') && (
               <button
                 type="button"
@@ -2339,10 +2405,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     setSubView('profile');
                   }
                 }}
-                className="w-full flex items-center justify-between p-4 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition cursor-pointer text-left"
+                className="w-full min-h-[52px] flex items-center justify-between p-4 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition cursor-pointer text-left"
               >
                 <div className="flex items-center gap-3.5">
-                  <Cloud className="w-5 h-5 text-blue-500" />
+                  <div className="w-8 h-8 rounded-xl bg-blue-500/12 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                    <Cloud className="w-4 h-4" />
+                  </div>
                   <span className="text-sm font-medium">
                     Google Bulut Senkronizasyonu
                   </span>
@@ -2689,29 +2757,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <LogOut className="w-4 h-4" />
             <span>Oturumu kapat</span>
           </button>
-        </div>
-      </div>
-
-      <div className="p-4 bg-white dark:bg-[#000000] border-t border-neutral-200/60 dark:border-neutral-900 shrink-0">
-        <div className="flex items-center gap-2.5 px-4 py-2.5 bg-neutral-100 dark:bg-[#18181b] rounded-full border border-neutral-200 dark:border-neutral-800 max-w-xl mx-auto w-full">
-          <Search className="w-4 h-4 text-neutral-400" />
-          <input
-            type="text"
-            value={searchFilter}
-            onChange={(e) => setSearchFilter(e.target.value)}
-            placeholder="Ayar ara"
-            className="flex-1 bg-transparent text-sm text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-hidden"
-          />
-          {searchFilter && (
-            <button
-              type="button"
-              onClick={() => setSearchFilter('')}
-              className="text-neutral-400 hover:text-black dark:hover:text-white cursor-pointer"
-              aria-label="Aramayı Temizle"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
         </div>
       </div>
 

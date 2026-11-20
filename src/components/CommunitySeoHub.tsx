@@ -29,6 +29,8 @@ import {
   Trash2,
   Users,
 } from 'lucide-react';
+import { QuickSocialShareButtons } from './SocialShareBar';
+import { ContentRatingAndComments } from './ContentRatingAndComments';
 import { LuxoModelId } from '../types/luxo';
 import {
   addArticleComment,
@@ -1870,7 +1872,7 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
                       <span>01. Hedef Kitle & Kullanıcı Segmentasyonu Analizi</span>
                     </h2>
                     <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                      Platformun 113 model, 4K görsel/video stüdyosu ve geliştirici araçlarına göre trafik payları, hedefler ve acı noktaları.
+                      Platformun 115 model, 4K görsel/video stüdyosu ve geliştirici araçlarına göre trafik payları, hedefler ve acı noktaları.
                     </p>
                   </div>
                 </div>
@@ -2313,6 +2315,25 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
                             </div>
                           </div>
 
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+                            <QuickSocialShareButtons
+                              compact
+                              payload={{
+                                title: thread.title,
+                                excerpt: thread.body,
+                                contentType: 'forum',
+                                badge: `FORUM · ${thread.category}`,
+                              }}
+                            />
+                          </div>
+                          <ContentRatingAndComments
+                            compact
+                            contentKey={`forum:${thread.id}`}
+                            contentTitle={thread.title}
+                            communityState={communityState}
+                            onCommunityUpdated={setCommunityState}
+                          />
+
                           {isExpanded && (
                             <div className="pt-3 border-t border-neutral-100 dark:border-neutral-800 space-y-3">
                               {thread.replies.length > 0 && (
@@ -2439,6 +2460,25 @@ export const CommunitySeoHub: React.FC<CommunitySeoHubProps> = ({
                         <p className="text-xs sm:text-sm text-neutral-600 dark:text-neutral-300 leading-relaxed">
                           {art.summary}
                         </p>
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                          <QuickSocialShareButtons
+                            compact
+                            payload={{
+                              title: art.title,
+                              excerpt: art.summary,
+                              contentType: 'blog',
+                              badge: `LUXO BLOG · ${art.category}`,
+                            }}
+                          />
+                        </div>
+                        <ContentRatingAndComments
+                          compact
+                          contentKey={art.id.startsWith('cs-') ? `cms:${art.id}` : `blog:${art.id}`}
+                          contentTitle={art.title}
+                          communityState={communityState}
+                          onCommunityUpdated={setCommunityState}
+                        />
 
                          {isOpen && (
                           <div className="pt-3 space-y-4">

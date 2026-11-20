@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import {
   addArticleComment,
   addForumReply,
+  addGenericContentComment,
   BLOG_ARTICLES,
   calculateWebPerfProjection,
+  computeContentRatingSummary,
   createCommunityPoll,
   createForumThread,
   createInitialCommunityState,
@@ -16,6 +18,7 @@ import {
   getQuizMasteryBadge,
   gradeQuizAnswers,
   moderateArticleComment,
+  rateContentItem,
   reactToArticle,
   recordCommunityEngagementAction,
   replyArticleComment,
@@ -29,9 +32,9 @@ import {
 
 test('scorePageMetaTags awards 100 when title, description, canonical, JSON-LD, sitemap, and OG match standards', () => {
   const optimal = scorePageMetaTags({
-    title: 'Luxo AI – 112 Yapay Zeka Modeli, 4K Görsel & Video Stüdyo',
+    title: 'Luxo AI – 115 Yapay Zeka Modeli, 4K Görsel & Video Stüdyo',
     description:
-      '112 yapay zeka modeliyle sohbet edin, kod yazın, Nano Banana ile 4K görsel ve Google Veo 3 ile sinematik video üretin. Hızlı ve ücretsiz deneyin.',
+      '115 yapay zeka modeliyle sohbet edin, kod yazın, Nano Banana ile 4K görsel ve Google Veo 3 ile sinematik video üretin. Hızlı ve ücretsiz deneyin.',
     canonicalUrl: 'https://ais-pre-fudupxh6ld5rvvbfz5qwt4-705459740809.europe-west2.run.app/',
     hasJsonLd: true,
     hasRobots: true,
@@ -234,5 +237,45 @@ test('Four-pillar audit, target audience segments, SEO content blueprints, and a
 
   const deletedState = moderateArticleComment(hiddenState, targetArticleId, commentId, 'delete');
   assert.equal(deletedState.articleComments[targetArticleId].some((c) => c.id === commentId), false);
+});
+
+test('1-5 star content rating averages and generic content comments work deterministically with PII redaction', () => {
+  const base = createInitialCommunityState(1_760_000_000_000);
+  const key = 'blog:blog-seo-architecture';
+
+  const r1 = rateContentItem(base, {
+    contentKey: key,
+    stars: 5,
+    authorName: 'Deniz',
+    now: 1_760_000_001_000,
+  });
+  assert.ok(r1.entry);
+  const r2 = rateContentItem(r1.state, {
+    contentKey: key,
+    stars: 4,
+    authorName: 'Arda',
+    now: 1_760_000_002_000,
+  });
+  const summary = computeContentRatingSummary(r2.state.contentRatings?.[key]);
+  assert.ok(summary.count >= 2);
+  assert.ok(summary.average >= 1 && summary.average <= 5);
+
+  const badRating = rateContentItem(r2.state, {
+    contentKey: key,
+    stars: 9,
+    authorName: 'Test',
+  });
+  assert.equal(badRating.entry, null);
+
+  const addedComment = addGenericContentComment(r2.state, {
+    contentKey: key,
+    authorName: 'okur@test.com',
+    body: 'Çok açıklayıcı bir teknik analiz olmuş, elinize sağlık.',
+    ratingStars: 5,
+    now: 1_760_000_003_000,
+  });
+  assert.ok(addedComment.comment);
+  assert.ok(!addedComment.comment!.authorName.includes('okur@test.com'));
+  assert.equal(addedComment.comment!.ratingStars, 5);
 });
 

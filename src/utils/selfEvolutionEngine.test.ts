@@ -111,12 +111,12 @@ test('runDeterministicEvolutionCycle and calibrateAllEcosystems upgrade rules an
   assert.equal(calibrated.ecosystems.length, 9);
   assert.equal(
     calibrated.ecosystems.reduce((sum, e) => sum + e.modelCount, 0),
-    113
+    115
   );
   assert.ok((calibrated.modelUsageCounts?.['gemini-4-hydrogen'] || 0) >= 100);
 });
 
-test('custom training, individual 113-model boosts, rule deletion, and evolution-aware Auto-Router work end-to-end', () => {
+test('custom training, individual 115-model boosts, rule deletion, and evolution-aware Auto-Router work end-to-end', () => {
   const base = createInitialEvolutionState(1_700_000_000_000);
   const customTrained = applyCustomTrainingRule(base, {
     goalText: 'SQL sorgularında indeks kullanımını zorunlu tut',

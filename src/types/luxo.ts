@@ -1,7 +1,9 @@
 export type LuxoModelId =
-  // Google Gemini & DeepMind (17)
+  // Google Gemini & DeepMind (19)
   | 'gemini-4-argon'
   | 'gemini-4-hydrogen'
+  | 'gemini-4-carbon'
+  | 'gemini-4-neon'
   | 'gemini-4-ultra'
   | 'gemini-4-pro-code'
   | 'gemini-3-8-pro'
@@ -374,7 +376,7 @@ export interface GeneratedVisual {
 export interface SharedContentPayload {
   title: string;
   excerpt: string;
-  contentType: 'chat' | 'code' | 'image' | 'video' | 'library';
+  contentType: 'chat' | 'code' | 'image' | 'video' | 'library' | 'blog' | 'forum';
   badge?: string;
   shareUrl?: string;
   ogImage?: string;
@@ -478,6 +480,14 @@ export interface EvolutionCycleMetric {
   trigger: EvolutionCycleLog['trigger'];
 }
 
+export interface EvolutionModelMetric {
+  modelId: string;
+  latencyMs: number;
+  successRate: number; // 0..100
+  callCount: number;
+  lastUsedAt: number;
+}
+
 export interface SelfEvolutionState {
   generation: number;
   autoEvolutionEnabled: boolean;
@@ -488,6 +498,7 @@ export interface SelfEvolutionState {
   ecosystems: EcosystemCalibration[];
   modelBoosts?: Record<string, ModelCalibrationBoost>;
   modelUsageCounts?: Record<string, number>;
+  modelMetrics?: Record<string, EvolutionModelMetric>;
   cycleHistory?: EvolutionCycleMetric[];
   benchmarkResults?: EvolutionBenchmarkCase[];
   recentLogs: EvolutionCycleLog[];

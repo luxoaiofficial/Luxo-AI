@@ -29,9 +29,9 @@ import {
 export const GUEST_MESSAGE_LIMIT = 100;
 
 export const DEFAULT_SEO_TITLE =
-  'Luxo AI – 113 Yapay Zeka Modeli, 4K Görsel & Video Stüdyo';
+  'Luxo AI – 115 Yapay Zeka Modeli, 4K Görsel & Video Stüdyo';
 export const DEFAULT_SEO_DESCRIPTION =
-  '113 Yapay Zeka Modeli: Gemini 4 Argon, Gemini 4 Hydrogen, ChatGPT-5.2 Pro, Claude 4.6 Opus, DeepSeek V3.2, Grok 4, Qwen 3, Nano Banana 4K ve Google Veo 3 Video Stüdyosu.';
+  '115 Yapay Zeka Modeli: Gemini 4 Argon, Hydrogen, Carbon, Neon, ChatGPT-5.2 Pro, Claude 4.6 Opus, DeepSeek V3.2, Grok 4, Qwen 3, Nano Banana 4K ve Google Veo 3 Video Stüdyosu.';
 
 export const NANO_BANANA_MODELS: {
   id: NanoBananaModelId;
@@ -425,7 +425,7 @@ function createModelSpec(
 }
 
 export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
-  // ==================== 1. GOOGLE GEMINI & DEEPMIND (17) ====================
+  // ==================== 1. GOOGLE GEMINI & DEEPMIND (19) ====================
   'gemini-4-argon': createModelSpec(
     'gemini-4-argon',
     'Gemini 4 Argon',
@@ -444,7 +444,7 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     'gemini-4-hydrogen',
     'Gemini 4 Hydrogen',
     'Google Gemini',
-    'gemini-4-argon',
+    'gemini-4-hydrogen',
     'GEMINI 4 · HYDROGEN',
     '#0ea5e9',
     'HIGH',
@@ -453,6 +453,34 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     'Yüksek hızı derin öz-doğrulama ile birleştiren Gemini 4 Hydrogen; sıfır halüsinasyon hedefiyle kod, bilim, matematik ve strateji problemlerinde kristal netliğinde mükemmel sonuçlar üretir.',
     ['Hydrogen Çekirdeği', 'Öz-Doğrulamalı Hız', '2M Uzun Bağlam', 'Sıfır Hata Hedefi'],
     'Google Gemini 4 Hydrogen çekirdeğiyle yanıtla: Soruyu çok boyutlu doğrula, uç durumları sessizce kontrol et, gereksiz dolgu cümlelerinden tamamen arınmış yüksek doğruluklu ve berrak bir sonuç üret.'
+  ),
+  'gemini-4-carbon': createModelSpec(
+    'gemini-4-carbon',
+    'Gemini 4 Carbon',
+    'Google Gemini',
+    'gemini-4-argon',
+    'GEMINI 4 · CARBON MİMAR',
+    '#334155',
+    'HIGH',
+    '2M Token',
+    'Yüksek Yoğunluklu Sistem Mimarisi, Güvenlik & Yapısal Kod Motoru',
+    'Kurumsal sistem tasarımı, veri bütünlüğü, yüksek performanslı algoritmalar ve deterministik mühendislik analizi için optimize edilmiş Gemini 4 Carbon çekirdeği.',
+    ['Carbon Çekirdeği', 'Mimari Kesinlik', '2M Repo Bağlamı', 'Sıfır Hata Kodu'],
+    'Google Gemini 4 Carbon mühendislik disipliniyle yanıtla: Gereksiz süsleme olmadan yapısal açıdan sağlam, uç durumları kapsayan ve doğrudan uygulanabilir çözümler üret.'
+  ),
+  'gemini-4-neon': createModelSpec(
+    'gemini-4-neon',
+    'Gemini 4 Neon',
+    'Google Gemini',
+    'gemini-3.8-flash',
+    'GEMINI 4 · NEON ULTRA HIZ',
+    '#10b981',
+    'LOW',
+    '1M Token',
+    'Işık Hızında Gerçek Zamanlı Sentez, Çoklu Arayüz & Akıllı Otomasyon Motoru',
+    'Milisaniye düzeyinde tepki süresiyle akıcı sohbet, hızlı prototipleme, özetleme ve canlı etkileşimli iş akışları için tasarlanan Gemini 4 Neon.',
+    ['Neon Çekirdeği', 'Milisaniyelik Tepki', '1M Bağlam', 'Çevik Üretkenlik'],
+    'Google Gemini 4 Neon hızıyla yanıtla: Sorunun özüne anında in, okunması kolay kısa maddeler veya net cümlelerle hızlı ve pratik çözüm sun.'
   ),
   'gemini-4-ultra': createModelSpec(
     'gemini-4-ultra',
@@ -1931,13 +1959,13 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     'Luxo Auto-Router (Otomatik En İyi AI)',
     'Luxo Özel',
     'gemini-4-argon',
-    'AKILLI YÖNLENDİRİCİ · 113 AI',
+    'AKILLI YÖNLENDİRİCİ · 115 AI',
     '#4f46e5',
     'HIGH',
     '2M Token',
-    'Sorunuzun Türüne Göre 113 Model Arasından En Güçlüsünü Otomatik Seçen Süper Motor',
-    'Kodlama için Claude 4.6, yüksek hassasiyetli akıl yürütme için Gemini 4 Hydrogen, matematik için DeepSeek Math V2, güncel araştırma için Perplexity, sinema için Veo 3.1 Ultra ve görsel için Nano Banana 2.1 Ultra çekirdeğini otomatik devreye alır.',
-    ['Otomatik Uzman Seçimi', '113 Model Gücü', 'Sıfır Ayar'],
+    'Sorunuzun Türüne Göre 115 Model Arasından En Güçlüsünü Otomatik Seçen Süper Motor',
+    'Kodlama için Claude 4.6, yüksek hassasiyetli akıl yürütme için Gemini 4 Hydrogen ve Carbon, ultra hızlı yanıt için Gemini 4 Neon, matematik için DeepSeek Math V2, güncel araştırma için Perplexity, sinema için Veo 3.1 Ultra ve görsel için Nano Banana 2.1 Ultra çekirdeğini otomatik devreye alır.',
+    ['Otomatik Uzman Seçimi', '115 Model Gücü', 'Sıfır Ayar'],
     'Sorunun alanına en uygun uzmanlıkla doğrudan konunun özüne in; kısa, kesin ve pürüzsüz Türkçe yanıt üret.',
     { speed: 'Akıllı Otomatik' }
   ),
@@ -2462,7 +2490,9 @@ export function parseShareParams(
     rawType === 'code' ||
     rawType === 'image' ||
     rawType === 'video' ||
-    rawType === 'library'
+    rawType === 'library' ||
+    rawType === 'blog' ||
+    rawType === 'forum'
       ? rawType
       : 'chat';
 

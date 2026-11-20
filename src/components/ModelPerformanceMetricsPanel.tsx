@@ -255,7 +255,7 @@ export const ModelPerformanceMetricsPanel: React.FC<
               data-testid="model-metrics-search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="113 model içinde ad, ID veya yetenek ara..."
+              placeholder="115 model içinde ad, ID veya yetenek ara..."
               aria-label="Model metriklerinde ara"
               className="w-full pl-8 pr-3 py-2 rounded-xl bg-neutral-50 dark:bg-[#141518] border border-neutral-200 dark:border-neutral-700 text-xs text-neutral-900 dark:text-white focus:outline-hidden focus:border-blue-500"
             />
@@ -269,7 +269,7 @@ export const ModelPerformanceMetricsPanel: React.FC<
             aria-label="Model kategori filtresi"
             className="px-3 py-2 rounded-xl bg-neutral-50 dark:bg-[#141518] border border-neutral-200 dark:border-neutral-700 text-xs font-medium text-neutral-800 dark:text-neutral-200 outline-none cursor-pointer"
           >
-            <option value="Tümü">Tüm Ekosistemler (113 Model)</option>
+            <option value="Tümü">Tüm Ekosistemler (115 Model)</option>
             {LUXO_MODEL_CATEGORIES.map((cat) => (
               <option key={cat} value={cat}>
                 {cat}

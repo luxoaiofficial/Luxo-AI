@@ -47,7 +47,11 @@ import {
   sanitizeLuxoBrand,
 } from '../utils/luxoLogic';
 import { CinematicMotionController } from './CinematicMotionController';
-import { SocialShareButton } from './SocialShareBar';
+import {
+  QuickSocialShareButtons,
+  SocialShareButton,
+} from './SocialShareBar';
+import { ContentRatingAndComments } from './ContentRatingAndComments';
 import { LuxoLogo } from './LuxoLogo';
 
 interface ImagesStudioViewProps {
@@ -1643,7 +1647,7 @@ export const ImagesStudioView: React.FC<ImagesStudioViewProps> = ({
                             <Download className="w-3.5 h-3.5" />
                           </a>
 
-                          <SocialShareButton
+                          <QuickSocialShareButtons
                             compact
                             payload={{
                               title: vis.title,
@@ -1718,6 +1722,11 @@ export const ImagesStudioView: React.FC<ImagesStudioViewProps> = ({
                           </button>
                         </div>
                       </div>
+                      <ContentRatingAndComments
+                        compact
+                        contentKey={`media:${vis.id}`}
+                        contentTitle={vis.title}
+                      />
                     </div>
                   </div>
                 );
@@ -1900,7 +1909,8 @@ export const ImagesStudioView: React.FC<ImagesStudioViewProps> = ({
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <SocialShareButton
+                <QuickSocialShareButtons
+                  compact
                   payload={{
                     title: previewVisual.title,
                     excerpt: previewVisual.prompt,
@@ -1939,6 +1949,12 @@ export const ImagesStudioView: React.FC<ImagesStudioViewProps> = ({
                   className="max-h-[74vh] w-auto object-contain"
                 />
               )}
+            </div>
+            <div className="p-4 border-t border-neutral-200 dark:border-neutral-800">
+              <ContentRatingAndComments
+                contentKey={`media:${previewVisual.id}`}
+                contentTitle={previewVisual.title}
+              />
             </div>
           </div>
         </div>

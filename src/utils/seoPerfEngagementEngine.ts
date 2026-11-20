@@ -205,12 +205,38 @@ export interface EngagementIntegrationBlueprint {
   liveLocationTab: 'seo' | 'performance' | 'audience-content' | 'forum' | 'blog-polls' | 'ux-faq';
 }
 
+export interface ContentRatingEntry {
+  id: string;
+  contentKey: string;
+  stars: number; // 1..5
+  authorName: string;
+  createdAt: number;
+}
+
+export interface ContentRatingSummary {
+  average: number;
+  count: number;
+  distribution: Record<1 | 2 | 3 | 4 | 5, number>;
+}
+
+export interface ContentCommentEntry {
+  id: string;
+  contentKey: string;
+  authorName: string;
+  body: string;
+  ratingStars?: number;
+  helpfulCount: number;
+  createdAt: number;
+}
+
 export interface CommunityHubState {
   threads: ForumThread[];
   polls: CommunityPoll[];
   articleComments: Record<string, ArticleComment[]>;
   articleReactions: Record<string, number>;
   studioArticles?: import('./contentStudioEngine.ts').PublishedStudioArticle[];
+  contentRatings?: Record<string, ContentRatingEntry[]>;
+  contentComments?: Record<string, ContentCommentEntry[]>;
   updatedAt: number;
 }
 
@@ -676,7 +702,7 @@ export const BLOG_ARTICLES: BlogArticle[] = [
   {
     id: 'blog-multi-model',
     slug: '112-model-uzerinde-otonom-yonlendirme-ve-oz-gelisim',
-    title: '112 Yapay Zeka Modeli Üzerinde Akıllı Yönlendirme ve Otonom Öz-Doğrulama',
+    title: '115 Yapay Zeka Modeli Üzerinde Akıllı Yönlendirme ve Otonom Öz-Doğrulama',
     category: 'AI Mimarisi',
     readTimeMin: 4,
     publishedIso: '2026-11-01',
@@ -973,10 +999,10 @@ export function generateRobotsTxt(baseUrl: string): string {
 
 export function buildWebAppManifest(): Record<string, unknown> {
   return {
-    name: 'Luxo AI – 112 Yapay Zeka Modeli & 4K Stüdyo',
+    name: 'Luxo AI – 115 Yapay Zeka Modeli & 4K Stüdyo',
     short_name: 'Luxo AI',
     description:
-      '112 yapay zeka modeli, otonom öz-gelişim merkezi, Nano Banana 4K görsel ve Google Veo 3 sinematik video stüdyosu.',
+      '115 yapay zeka modeli, otonom öz-gelişim merkezi, Nano Banana 4K görsel ve Google Veo 3 sinematik video stüdyosu.',
     start_url: '/',
     display: 'standalone',
     background_color: '#18181b',
@@ -1139,6 +1165,48 @@ export function createInitialCommunityState(now = Date.now()): CommunityHubState
         replies: [],
       },
     ],
+    contentRatings: {
+      'blog:blog-seo-2026': [
+        { id: 'rat-1', contentKey: 'blog:blog-seo-2026', stars: 5, authorName: 'Burak Ö.', createdAt: now - 5_000_000 },
+        { id: 'rat-2', contentKey: 'blog:blog-seo-2026', stars: 5, authorName: 'Selin Y.', createdAt: now - 4_200_000 },
+        { id: 'rat-3', contentKey: 'blog:blog-seo-2026', stars: 4, authorName: 'Emre T.', createdAt: now - 3_100_000 },
+      ],
+      'blog:blog-web-perf': [
+        { id: 'rat-4', contentKey: 'blog:blog-web-perf', stars: 5, authorName: 'Zeynep K.', createdAt: now - 7_500_000 },
+        { id: 'rat-5', contentKey: 'blog:blog-web-perf', stars: 5, authorName: 'Mert A.', createdAt: now - 6_100_000 },
+      ],
+      'forum:thread-seo-spa': [
+        { id: 'rat-6', contentKey: 'forum:thread-seo-spa', stars: 5, authorName: 'Deniz K.', createdAt: now - 5_800_000 },
+        { id: 'rat-7', contentKey: 'forum:thread-seo-spa', stars: 4, authorName: 'Kaan B.', createdAt: now - 4_000_000 },
+      ],
+      'forum:thread-veo-motion': [
+        { id: 'rat-8', contentKey: 'forum:thread-veo-motion', stars: 5, authorName: 'Selin Y.', createdAt: now - 9_000_000 },
+      ],
+    },
+    contentComments: {
+      'blog:blog-seo-2026': [
+        {
+          id: 'cc-init-1',
+          contentKey: 'blog:blog-seo-2026',
+          authorName: 'Burak Ö.',
+          body: 'Dinamik JSON-LD + XML sitemap kurulumu ilk haftada arama görünürlüğünü ölçülebilir şekilde artırdı.',
+          ratingStars: 5,
+          helpfulCount: 6,
+          createdAt: now - 5_000_000,
+        },
+      ],
+      'forum:thread-seo-spa': [
+        {
+          id: 'cc-init-2',
+          contentKey: 'forum:thread-seo-spa',
+          authorName: 'Kaan B.',
+          body: 'OpenGraph dinamik PNG servisi sosyal paylaşım önizlemelerimizi çok netleştirdi.',
+          ratingStars: 4,
+          helpfulCount: 4,
+          createdAt: now - 4_000_000,
+        },
+      ],
+    },
     polls: [
       {
         id: 'poll-next-feature',
@@ -1192,12 +1260,22 @@ export function hydrateCommunityState(
     Array.isArray(raw.studioArticles) && raw.studioArticles.length > 0
       ? raw.studioArticles
       : initial.studioArticles || [];
+  const contentRatings =
+    raw.contentRatings && typeof raw.contentRatings === 'object'
+      ? { ...(initial.contentRatings || {}), ...raw.contentRatings }
+      : initial.contentRatings || {};
+  const contentComments =
+    raw.contentComments && typeof raw.contentComments === 'object'
+      ? { ...(initial.contentComments || {}), ...raw.contentComments }
+      : initial.contentComments || {};
   return {
     threads,
     polls,
     articleComments,
     articleReactions,
     studioArticles,
+    contentRatings,
+    contentComments,
     updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : now,
   };
 }
@@ -1704,4 +1782,183 @@ export function recordCommunityEngagementAction(
     lastVisitDayIso: todayIso,
   };
 }
+
+export function computeContentRatingSummary(
+  entries: ContentRatingEntry[] = []
+): ContentRatingSummary {
+  const distribution: Record<1 | 2 | 3 | 4 | 5, number> = {
+    1: 0,
+    2: 0,
+    3: 0,
+    4: 0,
+    5: 0,
+  };
+  let sum = 0;
+  let validCount = 0;
+  for (const item of entries) {
+    const s = Math.round(Number(item?.stars || 0));
+    if (s >= 1 && s <= 5) {
+      const clamped = s as 1 | 2 | 3 | 4 | 5;
+      distribution[clamped] += 1;
+      sum += clamped;
+      validCount += 1;
+    }
+  }
+  const average = validCount > 0 ? Math.round((sum / validCount) * 10) / 10 : 0;
+  return {
+    average,
+    count: validCount,
+    distribution,
+  };
+}
+
+export function rateContentItem(
+  state: CommunityHubState,
+  input: {
+    contentKey: string;
+    stars: number;
+    authorName?: string;
+    now?: number;
+  }
+): {
+  state: CommunityHubState;
+  entry: ContentRatingEntry | null;
+  summary: ContentRatingSummary;
+  error?: string;
+} {
+  const now = input.now ?? Date.now();
+  const cleanKey = redactSensitivePii((input.contentKey || '').trim()).slice(0, 120);
+  if (!cleanKey) {
+    return {
+      state,
+      entry: null,
+      summary: computeContentRatingSummary([]),
+      error: 'Geçersiz içerik kimliği.',
+    };
+  }
+  const numericStars = Number(input.stars);
+  if (!Number.isFinite(numericStars) || numericStars < 1 || numericStars > 5) {
+    return {
+      state,
+      entry: null,
+      summary: computeContentRatingSummary(state.contentRatings?.[cleanKey] || []),
+      error: 'Puan 1 ile 5 yıldız arasında olmalıdır.',
+    };
+  }
+  const clampedStars = Math.max(1, Math.min(5, Math.round(numericStars)));
+  const cleanAuthor = redactSensitivePii(
+    (input.authorName || 'Ziyaretçi').trim() || 'Ziyaretçi'
+  ).slice(0, 40);
+
+  const entry: ContentRatingEntry = {
+    id: `rat-${now.toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    contentKey: cleanKey,
+    stars: clampedStars,
+    authorName: cleanAuthor,
+    createdAt: now,
+  };
+
+  const existing = state.contentRatings?.[cleanKey] || [];
+  const nextList = [entry, ...existing].slice(0, 200);
+  const summary = computeContentRatingSummary(nextList);
+
+  return {
+    entry,
+    summary,
+    state: {
+      ...state,
+      updatedAt: now,
+      contentRatings: {
+        ...(state.contentRatings || {}),
+        [cleanKey]: nextList,
+      },
+    },
+  };
+}
+
+export function addGenericContentComment(
+  state: CommunityHubState,
+  input: {
+    contentKey: string;
+    authorName?: string;
+    body: string;
+    ratingStars?: number;
+    now?: number;
+  }
+): {
+  state: CommunityHubState;
+  comment: ContentCommentEntry | null;
+  summary: ContentRatingSummary;
+  error?: string;
+} {
+  const now = input.now ?? Date.now();
+  const cleanKey = redactSensitivePii((input.contentKey || '').trim()).slice(0, 120);
+  if (!cleanKey) {
+    return {
+      state,
+      comment: null,
+      summary: computeContentRatingSummary([]),
+      error: 'Geçersiz içerik kimliği.',
+    };
+  }
+  const cleanBody = redactSensitivePii((input.body || '').trim()).slice(0, 900);
+  if (cleanBody.length < 3) {
+    return {
+      state,
+      comment: null,
+      summary: computeContentRatingSummary(state.contentRatings?.[cleanKey] || []),
+      error: 'Yorum metni en az 3 karakter olmalıdır.',
+    };
+  }
+  const cleanAuthor = redactSensitivePii(
+    (input.authorName || 'Topluluk Üyesi').trim() || 'Topluluk Üyesi'
+  ).slice(0, 40);
+
+  let nextState = state;
+  let validStars: number | undefined;
+  if (
+    typeof input.ratingStars === 'number' &&
+    Number.isFinite(input.ratingStars) &&
+    input.ratingStars >= 1 &&
+    input.ratingStars <= 5
+  ) {
+    validStars = Math.round(input.ratingStars);
+    nextState = rateContentItem(nextState, {
+      contentKey: cleanKey,
+      stars: validStars,
+      authorName: cleanAuthor,
+      now,
+    }).state;
+  }
+
+  const comment: ContentCommentEntry = {
+    id: `ccom-${now.toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    contentKey: cleanKey,
+    authorName: cleanAuthor,
+    body: cleanBody,
+    ratingStars: validStars,
+    helpfulCount: 1,
+    createdAt: now,
+  };
+
+  const existingComments = nextState.contentComments?.[cleanKey] || [];
+  const nextComments = [comment, ...existingComments].slice(0, 100);
+  const summary = computeContentRatingSummary(
+    nextState.contentRatings?.[cleanKey] || []
+  );
+
+  return {
+    comment,
+    summary,
+    state: {
+      ...nextState,
+      updatedAt: now,
+      contentComments: {
+        ...(nextState.contentComments || {}),
+        [cleanKey]: nextComments,
+      },
+    },
+  };
+}
+
 

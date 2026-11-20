@@ -241,7 +241,7 @@ export function parseVoiceCommand(rawInput: string): VoiceCommandAction {
     return {
       type: 'open_model_metrics',
       confidence: 0.96,
-      feedbackTr: 'Tüm 113 AI modeli için Performans, Gecikme ve Maliyet paneli açılıyor.',
+      feedbackTr: 'Tüm 115 AI modeli için Performans, Gecikme ve Maliyet paneli açılıyor.',
     };
   }
 

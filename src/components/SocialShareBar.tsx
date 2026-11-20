@@ -635,3 +635,101 @@ export const SocialShareButton: React.FC<SocialShareButtonProps> = ({
     </>
   );
 };
+
+interface QuickSocialShareButtonsProps {
+  payload: SharedContentPayload;
+  compact?: boolean;
+  showMoreModal?: boolean;
+  className?: string;
+  onShared?: (platform: string) => void;
+}
+
+export const QuickSocialShareButtons: React.FC<QuickSocialShareButtonsProps> = ({
+  payload,
+  compact = true,
+  showMoreModal = true,
+  className = '',
+  onShared,
+}) => {
+  const rawOrigin =
+    typeof window !== 'undefined' ? window.location.origin : undefined;
+  const origin = resolvePublicAppUrl(rawOrigin);
+  const cleanPayload: SharedContentPayload = {
+    title: sanitizeLuxoBrand(payload.title || 'Luxo AI Paylaşımı'),
+    excerpt: sanitizeLuxoBrand(payload.excerpt || ''),
+    contentType: payload.contentType,
+    badge: payload.badge ? sanitizeLuxoBrand(payload.badge) : undefined,
+  };
+  const links = buildSocialShareLinks(origin, cleanPayload);
+
+  return (
+    <div
+      className={`inline-flex flex-wrap items-center gap-1.5 ${className}`}
+      data-testid="quick-social-share-bar"
+    >
+      <a
+        href={links.facebook}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={() => onShared?.('Facebook')}
+        aria-label="Facebook'ta Paylaş"
+        title="Facebook'ta Paylaş"
+        data-testid="quick-share-facebook"
+        className={`inline-flex items-center justify-center gap-1 rounded-full bg-[#1877F2]/10 hover:bg-[#1877F2] text-[#1877F2] hover:text-white border border-[#1877F2]/25 transition font-semibold cursor-pointer ${
+          compact ? 'px-2.5 py-1.5 text-[11px] min-h-[32px]' : 'px-3 py-2 text-xs min-h-[36px]'
+        }`}
+      >
+        <svg className="w-3.5 h-3.5 fill-current shrink-0" viewBox="0 0 24 24">
+          <path d="M22.675 0h-21.35c-.732 0-1.325.593-1.325 1.325v21.351c0 .731.593 1.324 1.325 1.324h11.495v-9.294h-3.128v-3.622h3.128v-2.671c0-3.1 1.893-4.788 4.659-4.788 1.325 0 2.463.099 2.795.143v3.24l-1.918.001c-1.504 0-1.795.715-1.795 1.763v2.313h3.587l-.467 3.622h-3.12v9.293h6.116c.73 0 1.323-.593 1.323-1.325v-21.35c0-.732-.593-1.325-1.325-1.325z" />
+        </svg>
+        {!compact && <span>Facebook</span>}
+      </a>
+
+      <a
+        href={links.twitter}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={() => onShared?.('Twitter')}
+        aria-label="X (Twitter)'da Paylaş"
+        title="X (Twitter)'da Paylaş"
+        data-testid="quick-share-twitter"
+        className={`inline-flex items-center justify-center gap-1 rounded-full bg-neutral-900/10 dark:bg-white/10 hover:bg-neutral-900 dark:hover:bg-white text-neutral-800 dark:text-neutral-200 hover:text-white dark:hover:text-neutral-950 border border-neutral-300/60 dark:border-neutral-700 transition font-semibold cursor-pointer ${
+          compact ? 'px-2.5 py-1.5 text-[11px] min-h-[32px]' : 'px-3 py-2 text-xs min-h-[36px]'
+        }`}
+      >
+        <svg className="w-3.5 h-3.5 fill-current shrink-0" viewBox="0 0 24 24">
+          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+        </svg>
+        {!compact && <span>Twitter</span>}
+      </a>
+
+      <a
+        href={links.linkedin}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={() => onShared?.('LinkedIn')}
+        aria-label="LinkedIn'de Paylaş"
+        title="LinkedIn'de Paylaş"
+        data-testid="quick-share-linkedin"
+        className={`inline-flex items-center justify-center gap-1 rounded-full bg-[#0A66C2]/10 hover:bg-[#0A66C2] text-[#0A66C2] hover:text-white border border-[#0A66C2]/25 transition font-semibold cursor-pointer ${
+          compact ? 'px-2.5 py-1.5 text-[11px] min-h-[32px]' : 'px-3 py-2 text-xs min-h-[36px]'
+        }`}
+      >
+        <svg className="w-3.5 h-3.5 fill-current shrink-0" viewBox="0 0 24 24">
+          <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
+        </svg>
+        {!compact && <span>LinkedIn</span>}
+      </a>
+
+      {showMoreModal && (
+        <SocialShareButton
+          payload={cleanPayload}
+          compact={compact}
+          label="Diğer"
+          onShared={onShared}
+        />
+      )}
+    </div>
+  );
+};
+

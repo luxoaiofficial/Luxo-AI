@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   buildSearchSuggestions,
   executeEnhancedSearch,
+  extractAvailableTags,
   highlightMatchSegments,
   type SearchableItem,
 } from './searchEngine.ts';
@@ -99,4 +100,74 @@ test('highlightMatchSegments splits query tokens case-insensitively', () => {
   const segs = highlightMatchSegments('GitHub CI/CD Yayınlama', 'github');
   assert.equal(segs.some((s) => s.matched && s.text.toLowerCase() === 'github'), true);
   assert.equal(highlightMatchSegments('Gemini 4 Argon', '').length, 1);
+});
+
+test('executeEnhancedSearch filters by tag, publishedIso range, minRating and sorts by rating_desc', () => {
+  const richItems: SearchableItem[] = [
+    {
+      id: 'b1',
+      title: 'Carbon Hızlı API Tasarımı',
+      subtitle: 'Düşük gecikmeli servis rehberi',
+      category: 'community',
+      timestamp: now - DAY_MS,
+      publishedIso: '2026-10-15',
+      keywords: ['api', 'carbon'],
+      tags: ['Performans', 'Backend'],
+      ratingAvg: 4.8,
+      ratingCount: 12,
+    },
+    {
+      id: 'b2',
+      title: 'Neon Hızlı Özet Rehberi',
+      subtitle: 'Kenar bilişim notları',
+      category: 'community',
+      timestamp: now - 5 * DAY_MS,
+      publishedIso: '2026-11-02',
+      keywords: ['neon', 'edge'],
+      tags: ['Performans', 'Edge'],
+      ratingAvg: 3.4,
+      ratingCount: 5,
+    },
+    {
+      id: 'b3',
+      title: 'Gelişmiş SEO Mimarisi',
+      subtitle: 'Schema ve Core Web Vitals',
+      category: 'community',
+      timestamp: now - 10 * DAY_MS,
+      publishedIso: '2026-11-12',
+      keywords: ['seo'],
+      tags: ['SEO', 'Edge'],
+      ratingAvg: 4.9,
+      ratingCount: 20,
+    },
+  ];
+
+  const tags = extractAvailableTags(richItems);
+  assert.ok(tags.includes('Performans'));
+  assert.ok(tags.includes('Edge'));
+
+  const byTagAndRating = executeEnhancedSearch(richItems, {
+    query: '',
+    category: 'all',
+    dateRange: 'all',
+    tag: 'Performans',
+    minRating: 4,
+    sortBy: 'relevance',
+    now,
+  });
+  assert.equal(byTagAndRating.length, 1);
+  assert.equal(byTagAndRating[0].item.id, 'b1');
+
+  const byPublishWindow = executeEnhancedSearch(richItems, {
+    query: '',
+    category: 'all',
+    dateRange: 'all',
+    dateFrom: '2026-11-01',
+    dateTo: '2026-11-15',
+    sortBy: 'rating_desc',
+    now,
+  });
+  assert.equal(byPublishWindow.length, 2);
+  assert.equal(byPublishWindow[0].item.id, 'b3');
+  assert.equal(byPublishWindow[1].item.id, 'b2');
 });

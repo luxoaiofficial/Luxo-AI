@@ -65,7 +65,11 @@ import {
   SYNTHESIS_MODES,
 } from '../utils/luxoLogic';
 import { LuxoLogo, MarkdownContent } from './LuxoLogo';
-import { SocialShareButton } from './SocialShareBar';
+import {
+  QuickSocialShareButtons,
+  SocialShareButton,
+} from './SocialShareBar';
+import { ContentRatingAndComments } from './ContentRatingAndComments';
 
 interface ChatWorkspaceProps {
   currentChat: ChatThread | null;
@@ -1661,7 +1665,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                             }`}
                           />
                         </button>
-                        <SocialShareButton
+                        <QuickSocialShareButtons
                           compact
                           payload={{
                             title:
@@ -1674,6 +1678,16 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                           onShared={(plat) =>
                             showToast(`${plat} paylaşımı hazırlandı.`)
                           }
+                        />
+                      </div>
+                    )}
+
+                    {isAssistant && (
+                      <div className="mt-2">
+                        <ContentRatingAndComments
+                          compact
+                          contentKey={`chat:${currentChat?.id || 'draft'}:${message.id}`}
+                          contentTitle={currentChat?.title || currentModel.name}
                         />
                       </div>
                     )}
@@ -2215,7 +2229,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
 
                 <form
                   onSubmit={handleSubmit}
-                  className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2"
+                  className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-2 sm:py-2.5 rounded-[28px] bg-white/90 dark:bg-[#23242b]/95 backdrop-blur-md border border-neutral-200/90 dark:border-neutral-700/70 shadow-[0_8px_30px_rgb(0,0,0,0.06)] dark:shadow-[0_10px_32px_rgb(0,0,0,0.35)] focus-within:border-indigo-500/70 focus-within:ring-2 focus-within:ring-indigo-500/15 transition-all"
                 >
                   <input
                     type="file"
@@ -2228,11 +2242,11 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-11 h-11 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200/80 dark:hover:bg-neutral-800 transition cursor-pointer shrink-0"
+                    className="w-11 h-11 sm:w-9 sm:h-9 rounded-2xl flex items-center justify-center text-neutral-700 dark:text-neutral-200 bg-neutral-100/80 dark:bg-neutral-800/80 hover:bg-neutral-200 dark:hover:bg-neutral-700 active:scale-95 transition cursor-pointer shrink-0"
                     aria-label="Dosya veya Resim Ekle"
                     title="Dosya veya Görsel Ekle"
                   >
-                    <Plus className="w-5 h-5 stroke-[2.2]" />
+                    <Plus className="w-4.5 h-4.5 stroke-[2.2]" />
                   </button>
 
                   <button
@@ -2243,10 +2257,10 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                     aria-haspopup="dialog"
                     aria-label="Üretim, Muhakeme ve Sentez Araçları"
                     title="Görsel, Video, Derin Düşünme, Web Araştırması ve Sentez Araçları"
-                    className={`w-11 h-11 sm:w-auto sm:h-9 sm:px-2.5 rounded-full text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer whitespace-nowrap shrink-0 ${
+                    className={`w-11 h-11 sm:w-auto sm:h-9 sm:px-3 rounded-2xl text-xs font-semibold flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer whitespace-nowrap shrink-0 ${
                       isToolsMenuOpen || activeToolCount > 0
-                        ? 'bg-indigo-600 text-white shadow-xs'
-                        : 'bg-white dark:bg-[#27282f] text-neutral-700 dark:text-neutral-200 border border-neutral-200/80 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                        ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-sm shadow-indigo-500/25'
+                        : 'bg-neutral-100/90 dark:bg-[#2c2d36] text-neutral-700 dark:text-neutral-200 border border-neutral-200/70 dark:border-neutral-700/80 hover:bg-neutral-200/80 dark:hover:bg-neutral-700'
                     }`}
                   >
                     <SlidersHorizontal className="w-4 h-4 sm:w-3.5 sm:h-3.5 shrink-0" />
@@ -2281,7 +2295,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                         : "Luxo AI'ya sor..."
                     }
                     disabled={isStreaming}
-                    className="flex-1 min-w-0 bg-transparent text-sm text-neutral-900 dark:text-white placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:outline-hidden py-2 px-1"
+                    className="flex-1 min-w-0 bg-transparent text-sm text-neutral-900 dark:text-white placeholder:text-neutral-500 dark:placeholder:text-neutral-400 focus:outline-hidden py-2 px-1.5"
                   />
 
                   <button
@@ -2330,10 +2344,10 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                       };
                       rec.start();
                     }}
-                    className={`w-11 h-11 sm:w-9 sm:h-9 rounded-full flex items-center justify-center transition cursor-pointer shrink-0 ${
+                    className={`w-11 h-11 sm:w-9 sm:h-9 rounded-2xl flex items-center justify-center transition active:scale-95 cursor-pointer shrink-0 ${
                       isRecording
-                        ? 'text-red-500 bg-red-100 dark:bg-red-900/30'
-                        : 'text-neutral-700 dark:text-neutral-300 hover:text-black dark:hover:text-white hover:bg-neutral-200/70 dark:hover:bg-neutral-800'
+                        ? 'text-red-500 bg-red-100 dark:bg-red-900/30 ring-2 ring-red-400/40'
+                        : 'text-neutral-700 dark:text-neutral-200 bg-neutral-100/80 dark:bg-neutral-800/80 hover:bg-neutral-200 dark:hover:bg-neutral-700'
                     }`}
                     aria-label="Mikrofon"
                   >
@@ -2344,7 +2358,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                     <button
                       type="submit"
                       disabled={isStreaming}
-                      className="w-11 h-11 sm:w-9 sm:h-9 rounded-full bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 flex items-center justify-center transition active:scale-95 cursor-pointer shrink-0"
+                      className="w-11 h-11 sm:w-9 sm:h-9 rounded-2xl bg-gradient-to-tr from-neutral-900 to-neutral-700 dark:from-white dark:to-neutral-200 text-white dark:text-neutral-900 shadow-sm flex items-center justify-center transition active:scale-95 cursor-pointer shrink-0"
                       aria-label="Gönder"
                     >
                       <Send className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
@@ -2356,7 +2370,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                       type="button"
                       data-testid="composer-voice-cmd-btn"
                       onClick={onOpenVoiceCommands}
-                      className="hidden sm:flex items-center gap-1 px-2.5 h-9 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 text-xs font-semibold transition cursor-pointer whitespace-nowrap shrink-0"
+                      className="hidden sm:flex items-center gap-1.5 px-3 h-9 rounded-2xl bg-emerald-500/12 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-xs font-semibold transition active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
                       aria-label="Sesli Komut Modu"
                       title="Sesli Komut Modu (Doğal dil ile tema, proje ve gezinme komutları)"
                     >
@@ -2368,7 +2382,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                   <button
                     type="button"
                     onClick={onOpenVoiceModal}
-                    className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-[#1b64f2] hover:bg-blue-700 text-white flex items-center justify-center transition active:scale-95 cursor-pointer shadow-xs shrink-0"
+                    className="w-11 h-11 sm:w-10 sm:h-9 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white flex items-center justify-center transition active:scale-95 cursor-pointer shadow-sm shadow-blue-600/25 shrink-0"
                     aria-label="Canlı Sesli Sohbet"
                     title="Canlı Ses Stüdyosu (10 Ses)"
                   >

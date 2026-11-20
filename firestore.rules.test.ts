@@ -168,7 +168,7 @@ function evaluateDirtyDozen(
   return 'PERMISSION_DENIED';
 }
 
-test('firestore.rules enforces Eight Pillars and matches all 11 firebase-blueprint.json paths & 112 models', () => {
+test('firestore.rules enforces Eight Pillars and matches all 11 firebase-blueprint.json paths & 115 models', () => {
   assert.ok(rulesSource.includes("rules_version = '2';"));
   assert.ok(
     rulesSource.includes('match /{document=**} {\n      allow read, write: if false;')
