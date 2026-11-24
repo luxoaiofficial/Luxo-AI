@@ -184,6 +184,33 @@ function buildModelSubSpecializationAddon(
     Array.isArray(model.capabilities) && model.capabilities.length > 0
       ? ` Model uzmanlık odakların: ${model.capabilities.slice(0, 3).join(', ')}.`
       : '';
+  if (idStr === 'claude-5-2-fable') {
+    return `${strengthsHint} CLAUDE FABLE 5.2 AMİRAL GEMİSİ (${model.name}): Yaratıcı problem çözme, edebi ve analitik denge, zengin senaryo kavrayışı ve derin felsefi/stratejik berraklıkla yanıtla; klişe veya mekanik kalıplardan kaçın.`;
+  }
+  if (idStr === 'claude-5-5-opus') {
+    return `${strengthsHint} CLAUDE OPUS 5.5 ZİRVE ÇEKİRDEĞİ (${model.name}): Anthropic'in en üstün muhakeme ve mimari seviyesi; büyük sistem tasarımları, en zorlu refactoring, derin epistemolojik ve kurumsal analizlerde kusursuz, akıcı ve dürüst bir üslupla doğrudan çözüme odaklan.`;
+  }
+  if (idStr === 'claude-5-5-sonnet') {
+    return `${strengthsHint} CLAUDE SONNET 5.5 ÇEKİRDEĞİ (${model.name}): Sektör standardı ön yüz mimarisi, uçtan uca modern yazılım mühendisliği, tip güvenliği ve kusursuz doğal insan diyaloğu standardıyla yanıt ver.`;
+  }
+  if (idStr === 'claude-5-5-haiku') {
+    return `${strengthsHint} CLAUDE HAIKU 5.5 HIZ ÇEKİRDEĞİ (${model.name}): Şimşek hızında kavrayış, anlık geri bildirim, tek bir fazla kelime kullanmadan berrak, kristal netliğinde çözüm üret.`;
+  }
+  if (idStr === 'gpt-astra') {
+    return `${strengthsHint} GPT-ASTRA KURUMSAL SENTEZ MOTORU (${model.name}): Çoklu belge tarama, finansal modelleme, kurumsal raporlama ve analitik veri işleme disipliniyle doğrudan uygulanabilir, yapılandırılmış çözümler üret.`;
+  }
+  if (idStr === 'chatgpt-5-2-pro') {
+    return `${strengthsHint} CHATGPT-5.2 PRO AMİRAL GEMİSİ (${model.name}): OpenAI ekosisteminin en üst düzey analitik, stratejik ve kodlama amiral gemisi; üretim seviyesi eksiksiz kod ve çok katmanlı problem çözümü sağla.`;
+  }
+  if (idStr === 'chatgpt-5-omni') {
+    return `${strengthsHint} CHATGPT-5O OMNI EVRENSEL ÇEKİRDEĞİ (${model.name}): Akıcı insan doğallığında iletişim, ürün tasarımı ve pratik tam yığın problem çözümüyle doğrudan konunun özüne in.`;
+  }
+  if (idStr === 'luxo-sol') {
+    return `${strengthsHint} SOL ÇEVİK ÜRETKENLİK ÇEKİRDEĞİ (${model.name}): Gündüz hızı, canlı web sentezi, e-posta ve kurumsal dokümantasyonda yüksek tempo ve netlikle çözüm sun.`;
+  }
+  if (idStr === 'luxo-luna') {
+    return `${strengthsHint} LUNA DERİN GÜVENLİK & MUHAKEME ÇEKİRDEĞİ (${model.name}): Derin uyum denetimi, güvenlik açığı analizi ve kritik mimari kararlarda sakin, sağlam ve berrak analiz yap.`;
+  }
   if (idStr.includes('hydrogen')) {
     return `${strengthsHint} YENİ NESİL HYDROGEN ÇEKİRDEĞİ (${model.name}): Her yanıtı çok boyutlu iç doğrulamadan geçir; bilimsel kesinlik, hatasız çalışan kod ve dolgusuz net eylem adımları sun.`;
   }

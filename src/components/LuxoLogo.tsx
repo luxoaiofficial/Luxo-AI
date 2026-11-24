@@ -65,6 +65,47 @@ export const LuxoLogo: React.FC<{ className?: string; size?: number }> = ({
   </svg>
 );
 
+export const ModelBrandAvatar: React.FC<{
+  name: string;
+  logoUrl?: string;
+  accentColor?: string;
+  sizeClass?: string;
+  imgClass?: string;
+}> = ({
+  name,
+  logoUrl,
+  accentColor = '#2563eb',
+  sizeClass = 'w-6 h-6 rounded-lg',
+  imgClass = 'w-full h-full object-contain',
+}) => {
+  const [imgFailed, setImgFailed] = useState(false);
+
+  if (logoUrl && !imgFailed) {
+    return (
+      <span
+        className={`${sizeClass} inline-flex items-center justify-center overflow-hidden bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-700/80 shrink-0 shadow-xs`}
+      >
+        <img
+          src={logoUrl}
+          alt={`${name} logosu`}
+          onError={() => setImgFailed(true)}
+          className={imgClass}
+          loading="lazy"
+        />
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={`${sizeClass} inline-flex items-center justify-center text-white shrink-0 shadow-xs`}
+      style={{ backgroundColor: accentColor }}
+    >
+      <LuxoLogo className="w-3/5 h-3/5 text-white" size={16} />
+    </span>
+  );
+};
+
 function fallbackCopyText(text: string) {
   try {
     const ta = document.createElement('textarea');
@@ -79,6 +120,31 @@ function fallbackCopyText(text: string) {
   } catch {
     // ignore
   }
+}
+
+export function renderInlineMarkdownNodes(text: string): React.ReactNode[] {
+  const tokenRegex = /(\*\*[^*]+\*\*|`[^`]+`)/g;
+  const parts = text.split(tokenRegex);
+  return parts.map((part, idx) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+      return (
+        <strong key={idx} className="font-bold text-neutral-900 dark:text-white">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+      return (
+        <code
+          key={idx}
+          className="px-1.5 py-0.5 rounded bg-neutral-200/70 dark:bg-neutral-800 text-blue-600 dark:text-blue-400 font-mono text-[13px]"
+        >
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    return <React.Fragment key={idx}>{part}</React.Fragment>;
+  });
 }
 
 export const MarkdownContent: React.FC<{
@@ -102,24 +168,6 @@ export const MarkdownContent: React.FC<{
 
   const safeContent = cleanAssistantResponse(content, true);
   const blocks = parseMarkdownBlocks(safeContent);
-
-  const escapeHtml = (raw: string) =>
-    raw
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-
-  const formatInline = (text: string) =>
-    escapeHtml(text)
-      .replace(
-        /\*\*(.*?)\*\*/g,
-        '<strong class="font-bold text-neutral-900 dark:text-white">$1</strong>'
-      )
-      .replace(
-        /`([^`]+)`/g,
-        '<code class="px-1.5 py-0.5 rounded bg-neutral-200/70 dark:bg-neutral-800 text-blue-600 dark:text-blue-400 font-mono text-[13px]">$1</code>'
-      );
 
   return (
     <div className="space-y-3 text-sm leading-relaxed text-neutral-900 dark:text-neutral-100">
@@ -175,11 +223,9 @@ export const MarkdownContent: React.FC<{
           if (paragraphBuffer.length > 0) {
             const joined = paragraphBuffer.join(' ');
             rendered.push(
-              <p
-                key={`p-${rendered.length}`}
-                className="text-sm leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: formatInline(joined) }}
-              />
+              <p key={`p-${rendered.length}`} className="text-sm leading-relaxed">
+                {renderInlineMarkdownNodes(joined)}
+              </p>
             );
             paragraphBuffer = [];
           }
@@ -193,10 +239,7 @@ export const MarkdownContent: React.FC<{
                 className="list-disc pl-5 space-y-1 text-sm leading-relaxed"
               >
                 {listBuffer.map((item, li) => (
-                  <li
-                    key={li}
-                    dangerouslySetInnerHTML={{ __html: formatInline(item) }}
-                  />
+                  <li key={li}>{renderInlineMarkdownNodes(item)}</li>
                 ))}
               </ul>
             );
@@ -209,10 +252,7 @@ export const MarkdownContent: React.FC<{
                 className="list-decimal pl-5 space-y-1 text-sm leading-relaxed"
               >
                 {orderedBuffer.map((item, oi) => (
-                  <li
-                    key={oi}
-                    dangerouslySetInnerHTML={{ __html: formatInline(item) }}
-                  />
+                  <li key={oi}>{renderInlineMarkdownNodes(item)}</li>
                 ))}
               </ol>
             );

@@ -135,6 +135,13 @@ import {
   toggleFollowUser,
   upsertSocialProfile,
 } from './src/utils/socialPlatformEngine.ts';
+import {
+  isTrustedGoogleApiMediaUrl,
+  resolveSafeStoredFilePath,
+  sanitizeSeoTargetUrl,
+  signSocialAdminToken,
+  verifySocialAdminToken,
+} from './src/utils/securityHelpers.ts';
 
 dotenv.config();
 
@@ -264,6 +271,10 @@ function loadServerSocialState(): SocialPlatformState {
 }
 
 let serverSocialState: SocialPlatformState = loadServerSocialState();
+const SOCIAL_ADMIN_HMAC_SECRET =
+  process.env.SOCIAL_ADMIN_SECRET?.trim() ||
+  crypto.randomBytes(32).toString('hex');
+let claimedSocialAdminUid: string | null = null;
 
 function persistServerSocialState(nextState: SocialPlatformState): void {
   serverSocialState = nextState;
@@ -601,7 +612,8 @@ function isInteractionsModel(modelId: LuxoModelId): boolean {
     backend === 'antigravity-preview-09-2026' ||
     backend === 'deep-research-preview-04-2026' ||
     backend === 'deep-research-max-preview-04-2026' ||
-    backend === 'gemini-omni-1.1-flash'
+    backend === 'gemini-omni-1.1-flash' ||
+    backend === 'gemini-omni-1.2-flash'
   );
 }
 
@@ -610,9 +622,31 @@ function supportsThinkingConfig(modelName: string): boolean {
     modelName === 'gemini-4-argon' ||
     modelName === 'gemini-4-hydrogen' ||
     modelName === 'gemini-4-carbon' ||
-    modelName === 'gemini-4-neon' ||
-    modelName === 'gemini-3.8-flash'
+    modelName === 'gemini-4-neon'
   );
+}
+
+function resolveThinkingLevelForCandidate(
+  candidateModel: string,
+  deepMode: boolean,
+  reasoningLevel: 'fast' | 'balanced' | 'deep',
+  modelDefaultLevel: 'LOW' | 'MEDIUM' | 'HIGH'
+): ThinkingLevel {
+  if (reasoningLevel === 'fast' && !deepMode) {
+    return ThinkingLevel.LOW;
+  }
+  if (
+    (deepMode || reasoningLevel === 'deep') &&
+    (candidateModel === 'gemini-4-hydrogen' ||
+      candidateModel === 'gemini-4-neon')
+  ) {
+    // Gemini 4 Hydrogen & Neon support maximum XHIGH reasoning depth
+    return 'XHIGH' as ThinkingLevel;
+  }
+  if (deepMode || reasoningLevel === 'deep' || modelDefaultLevel === 'HIGH') {
+    return ThinkingLevel.HIGH;
+  }
+  return ThinkingLevel.MEDIUM;
 }
 
 const sdkModelCooldownMap = new Map<string, number>();
@@ -637,27 +671,58 @@ function recordSdkModelFailure(modelName: string, err: unknown): void {
 
 function resolveCandidateModels(
   modelId: LuxoModelId,
-  _canTryPaid: boolean
+  canTryPaid: boolean
 ): string[] {
-  const backend = LUXO_MODELS[modelId]?.sdkBackend || 'gemini-3.8-flash';
+  const cfg = LUXO_MODELS[modelId];
+  const backend = cfg?.sdkBackend || 'gemini-4-hydrogen';
   let rawOrder: string[];
+
   if (backend === 'gemini-3.5-transcribe') {
-    rawOrder = ['gemini-3.5-transcribe', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+    rawOrder = [
+      'gemini-3.5-transcribe',
+      'gemini-4-hydrogen',
+      'gemini-3.1-flash-lite',
+    ];
   } else if (
-    backend === 'gemini-3.8-flash' ||
-    backend === 'gemini-4-argon' ||
-    backend === 'gemini-4-hydrogen'
+    canTryPaid &&
+    (backend === 'gemini-4-carbon' ||
+      backend === 'gemini-4-neon' ||
+      backend === 'gemini-4-argon' ||
+      backend === 'gemini-4-hydrogen')
   ) {
-    rawOrder = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+    rawOrder = [
+      backend,
+      ...(backend !== 'gemini-4-hydrogen' ? ['gemini-4-hydrogen'] : []),
+      'gemini-3.1-flash-lite',
+    ];
+  } else if (
+    canTryPaid &&
+    (cfg?.category === 'DeepSeek' ||
+      cfg?.category === 'Anthropic Claude' ||
+      cfg?.category === 'OpenAI & ChatGPT' ||
+      cfg?.category === 'Luxo Özel' ||
+      cfg?.thinkingLevel === 'HIGH')
+  ) {
+    rawOrder = [
+      'gemini-4-neon',
+      'gemini-4-carbon',
+      'gemini-4-hydrogen',
+      'gemini-3.1-flash-lite',
+    ];
+  } else if (canTryPaid) {
+    rawOrder = [
+      'gemini-4-hydrogen',
+      'gemini-3.1-flash-lite',
+    ];
   } else {
-    rawOrder = ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
+    rawOrder = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
   }
 
   const healthy = rawOrder.filter((m) => isSdkModelHealthy(m));
   if (healthy.length > 0) {
     return healthy;
   }
-  return ['gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+  return ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
 }
 
 interface ServerCollabRoom {
@@ -769,13 +834,13 @@ async function runInteractionsTurn(
       { timeout: 18000, maxRetries: 0 }
     )) as typeof interaction;
   } else {
-    resolvedName = 'gemini-omni-1.1-flash';
+    resolvedName = 'gemini-omni-1.2-flash';
     const interactionTools: { type: string }[] = [];
     if (webSearch) interactionTools.push({ type: 'google_search' });
     if (hasUrlInPrompt) interactionTools.push({ type: 'url_context' });
     interaction = (await ai.interactions.create(
       {
-        model: 'gemini-omni-1.1-flash',
+        model: 'gemini-omni-1.2-flash',
         input: promptText,
         system_instruction: systemInstruction,
         ...(interactionTools.length > 0 ? { tools: interactionTools } : {}),
@@ -1161,9 +1226,10 @@ async function startServer() {
   });
 
   app.post('/api/seo/generate-meta', async (req, res) => {
-    const { topic = '', targetUrl = 'https://ais-pre-fudupxh6ld5rvvbfz5qwt4-705459740809.europe-west2.run.app/' } =
+    const { topic = '', targetUrl = 'https://luxo.ai/' } =
       req.body || {};
     const cleanTopic = sanitizeLuxoBrand(String(topic || '').trim()).slice(0, 220);
+    const safeTargetUrl = sanitizeSeoTargetUrl(targetUrl, 'https://luxo.ai/');
     if (cleanTopic.length < 3) {
       return res.status(400).json({
         ok: false,
@@ -1175,8 +1241,8 @@ async function startServer() {
     if (ai) {
       try {
         const resp = await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: `Konu: "${cleanTopic}"\nHedef URL: ${targetUrl}\n\nBu web sayfası için Google arama sonuçlarında maksimum tıklama oranı (CTR) sağlayacak Türkçe SEO meta paketi üret:\n1. metaTitle: 35–58 karakter arasında, marka ve anahtar kelime odaklı başlık.\n2. metaDescription: 125–156 karakter arasında, net eylem çağrısı içeren açıklama.\n3. primaryKeywords: 5 adet yüksek niyetli Türkçe anahtar kelime dizisi.\n4. technicalTip: Bu sayfa için 1 cümlelik somut teknik SEO önerisi.`,
+          model: 'gemini-4-hydrogen',
+          contents: `Konu: "${cleanTopic}"\nHedef URL: ${safeTargetUrl}\n\nBu web sayfası için Google arama sonuçlarında maksimum tıklama oranı (CTR) sağlayacak Türkçe SEO meta paketi üret:\n1. metaTitle: 35–58 karakter arasında, marka ve anahtar kelime odaklı başlık.\n2. metaDescription: 125–156 karakter arasında, net eylem çağrısı içeren açıklama.\n3. primaryKeywords: 5 adet yüksek niyetli Türkçe anahtar kelime dizisi.\n4. technicalTip: Bu sayfa için 1 cümlelik somut teknik SEO önerisi.`,
           config: {
             abortSignal: AbortSignal.timeout(7500),
             thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
@@ -1300,7 +1366,7 @@ async function startServer() {
       if (ai) {
         try {
           const resp = await ai.models.generateContent({
-            model: 'gemini-3.8-flash',
+            model: 'gemini-4-hydrogen',
             contents: `Forum Başlığı: ${targetThread.title}\nKategori: ${targetThread.category}\nSoru/İçerik: ${targetThread.body}\n\nBu topluluk konusuna "${chosenCfg.name}" kıdemli mühendislik perspektifiyle 2–3 cümlelik, somut teknik çözüm öneren, dolgusuz Türkçe bir uzman yanıtı yaz.`,
             config: {
               abortSignal: AbortSignal.timeout(6500),
@@ -1467,7 +1533,7 @@ async function startServer() {
     if (ai) {
       try {
         const resp = await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
+          model: 'gemini-4-hydrogen',
           contents: `Konu: "${cleanTopic}"\nOdak Anahtar Kelime: "${fallbackPack.primaryKeyword}"\nHedef Kitle: "${audience}"\nÜslup: "${tone}"\nArama Niyeti: "${intent}"\n\nWeb sitesi İçerik Stüdyosu için Türkçe, yüksek tıklama oranlı (CTR) SEO içerik paketi üret:\n- blogTitles: 4 adet farklı açıda (Rehber, Karşılaştırma, Uygulama Şablonu, Vaka Analizi) 35–60 karakterlik blog başlığı.\n- metaDescriptions: 3 adet net eylem çağrısı içeren 122–156 karakterlik SEO meta açıklaması.\n- secondaryKeywords: 5 adet alakalı Türkçe anahtar kelime.\n- suggestedSummary: 1–2 cümlelik yönetici özeti.\n- suggestedSections: 3 adet alt başlıklı (heading + content) doğrudan yayınlanmaya hazır makale bölümü.`,
           config: {
             abortSignal: AbortSignal.timeout(8500),
@@ -1807,16 +1873,16 @@ async function startServer() {
               } detaylarıyla zenginleştirilmiş tek paragraflık etkileyici bir Türkçe isteme dönüştür. Yalnızca geliştirilmiş istem metnini döndür, tırnak veya açıklama ekleme.`
             : 'Kullanıcının istemini yapay zekadan kısa, öz, sade ve değişik semboller içermeyen doğrudan bir yanıt alacak şekilde net bir Türkçe isteme dönüştür. Yalnızca 1-2 cümlelik geliştirilmiş istemi döndür.';
 
-        for (const enhanceModel of ['gemini-3.1-flash-lite', 'gemini-3.8-flash']) {
+        for (const enhanceModel of ['gemini-4-hydrogen', 'gemini-3.1-flash-lite']) {
           if (!isSdkModelHealthy(enhanceModel)) continue;
           try {
             const resp = await ai.models.generateContent({
               model: enhanceModel,
               contents: clean,
               config: {
-                abortSignal: AbortSignal.timeout(3500),
+                abortSignal: AbortSignal.timeout(4000),
                 systemInstruction: instruction,
-                ...(enhanceModel === 'gemini-3.8-flash'
+                ...(enhanceModel === 'gemini-4-hydrogen'
                   ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
                   : {}),
               },
@@ -1874,7 +1940,7 @@ async function startServer() {
       | undefined;
 
     if (ai) {
-      for (const evoModel of ['gemini-3.1-flash-lite', 'gemini-3.8-flash']) {
+      for (const evoModel of ['gemini-4-hydrogen', 'gemini-3.1-flash-lite']) {
         if (!isSdkModelHealthy(evoModel)) continue;
         try {
           const existingTitles = serverEvolutionState.learnedRules
@@ -1993,7 +2059,7 @@ Mevcut 115 yapay zeka modelimizin yanıt kalitesini, hızını, Türkçe dil do�
 
     const ai = getAiClient();
     if (ai) {
-      for (const evoModel of ['gemini-3.1-flash-lite', 'gemini-3.8-flash']) {
+      for (const evoModel of ['gemini-4-hydrogen', 'gemini-3.1-flash-lite']) {
         if (!isSdkModelHealthy(evoModel)) continue;
         try {
           const targetDesc = validTargetModel
@@ -2329,9 +2395,20 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
     const activeAttachment = reversedUserMsg?.inlineAttachment;
 
     const reqStartMs = Date.now();
+    const parsedReasoningForRoute: 'fast' | 'balanced' | 'deep' =
+      reasoningLevel === 'fast' || reasoningLevel === 'deep'
+        ? reasoningLevel
+        : 'balanced';
+    const parsedStrictnessForRoute: 'production' | 'explained' =
+      codeStrictness === 'explained' ? 'explained' : 'production';
     const autoRoute =
       validModelId === 'luxo-auto-router'
-        ? resolveAutoRoutedModel(lastUserMessage, serverEvolutionState)
+        ? resolveAutoRoutedModel(lastUserMessage, serverEvolutionState, {
+            reasoningLevel: parsedReasoningForRoute,
+            codeStrictness: parsedStrictnessForRoute,
+            webSearch: Boolean(webSearch),
+            hasAttachment: Boolean(activeAttachment),
+          })
         : null;
     const effectiveModelId: LuxoModelId = autoRoute
       ? autoRoute.targetModelId
@@ -2405,7 +2482,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
       autoVerifyOutputs: parsedAutoVerify,
     });
 
-    const recentMessages = normalizedMessages.slice(-12);
+    const recentMessages = normalizedMessages.slice(-18);
 
     const fallbackData = generateLocalSmartResponse(
       lastUserMessage,
@@ -2432,15 +2509,8 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
     const hasUrlInPrompt = /https?:\/\/\S+/i.test(lastUserMessage);
     const candidateModels = resolveCandidateModels(effectiveModelId, canTryPaid);
 
-    // Never pass thinkingBudget (400 error on gemini-4-argon). Factor user reasoningLevel while respecting responsive latencies.
-    const desiredThinkingLevel =
-      effectiveDeepReasoning || parsedReasoningLevel === 'deep'
-        ? ThinkingLevel.HIGH
-        : parsedReasoningLevel === 'fast'
-        ? ThinkingLevel.LOW
-        : modelCfg.thinkingLevel === 'HIGH'
-        ? ThinkingLevel.MEDIUM
-        : ThinkingLevel.LOW;
+    const isDeepReasoningActive =
+      effectiveDeepReasoning || parsedReasoningLevel === 'deep';
 
     const buildStandardTools = () => {
       const toolList: Record<string, unknown>[] = [];
@@ -2455,10 +2525,18 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
     const hasInlineAttachment = normalizedMessages.some((m) =>
       Boolean(m?.inlineAttachment?.data)
     );
-    const tuningSignature = `${parsedReasoningLevel}:${parsedConciseness}:${parsedCodeStrictness}:${parsedAutoVerify ? 1 : 0}:${parsedTemperature ?? 'def'}`;
+    const personalizationSig = [
+      String(customTone || ''),
+      String(customWarmth || ''),
+      String(customFormatting || ''),
+      String(customInstructions || '').slice(0, 80),
+      String(projectContext || '').slice(0, 60),
+      String(Array.isArray(memoryItems) ? memoryItems.length : 0),
+    ].join('|');
+    const tuningSignature = `${parsedReasoningLevel}:${parsedConciseness}:${parsedCodeStrictness}:${parsedAutoVerify ? 1 : 0}:${parsedTemperature ?? 'def'}::${personalizationSig}`;
     const cacheKey =
       !hasInlineAttachment && !effectiveWebSearch && normalizedMessages.length <= 2
-        ? `v6::${effectiveModelId}::${synthesisMode}::${effectiveDeepReasoning ? '1' : '0'}::${tuningSignature}::${serverEvolutionState.generation}::${lastUserMessage.trim().toLowerCase()}`
+        ? `v7::${effectiveModelId}::${synthesisMode}::${effectiveDeepReasoning ? '1' : '0'}::${tuningSignature}::${serverEvolutionState.generation}::${lastUserMessage.trim().toLowerCase()}`
         : '';
 
     const cachedHit = cacheKey ? chatResponseCache.get(cacheKey) : undefined;
@@ -2569,8 +2647,14 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
       if (ai) {
         for (const candidateModel of candidateModels) {
           try {
+            const candidateThinking = resolveThinkingLevelForCandidate(
+              candidateModel,
+              effectiveDeepReasoning,
+              parsedReasoningLevel,
+              modelCfg.thinkingLevel
+            );
             const perModelTimeout =
-              desiredThinkingLevel === ThinkingLevel.HIGH ? 22000 : 18000;
+              isDeepReasoningActive ? 26000 : 18000;
             const allowTemp =
               typeof parsedTemperature === 'number' &&
               !candidateModel.startsWith('gemini-4-');
@@ -2585,7 +2669,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
                 ...(supportsThinkingConfig(candidateModel)
                   ? {
                       thinkingConfig: {
-                        thinkingLevel: desiredThinkingLevel,
+                        thinkingLevel: candidateThinking,
                       },
                     }
                   : {}),
@@ -2621,7 +2705,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
             recordSdkModelFailure(candidateModel, err);
             const msg = String(err || '');
             if (
-              candidateModel === 'gemini-4-argon' &&
+              candidateModel.startsWith('gemini-4-') &&
               (msg.includes('Free Tier') ||
                 msg.includes('limit: 0') ||
                 msg.includes('429'))
@@ -2749,9 +2833,15 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
     if (ai && !clientDisconnected) {
       for (const candidateModel of candidateModels) {
         if (clientDisconnected) break;
+        let sentAnyStreamChunk = false;
         try {
-          const perModelTimeout =
-            desiredThinkingLevel === ThinkingLevel.HIGH ? 22000 : 18000;
+          const candidateThinking = resolveThinkingLevelForCandidate(
+            candidateModel,
+            effectiveDeepReasoning,
+            parsedReasoningLevel,
+            modelCfg.thinkingLevel
+          );
+          const perModelTimeout = isDeepReasoningActive ? 26000 : 18000;
           const allowTemp =
             typeof parsedTemperature === 'number' &&
             !candidateModel.startsWith('gemini-4-');
@@ -2766,7 +2856,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
               ...(supportsThinkingConfig(candidateModel)
                 ? {
                     thinkingConfig: {
-                      thinkingLevel: desiredThinkingLevel,
+                      thinkingLevel: candidateThinking,
                     },
                   }
                 : {}),
@@ -2782,7 +2872,25 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
               groundedCitations = found;
             }
             if (chunk.text) {
+              if (!sentAnyStreamChunk) {
+                sentAnyStreamChunk = true;
+                safeSseWrite(
+                  `data: ${JSON.stringify({
+                    meta: {
+                      thinkingSteps: fallbackData.thinkingSteps,
+                      citations:
+                        groundedCitations.length > 0
+                          ? groundedCitations
+                          : fallbackData.citations,
+                      followUpSuggestions: fallbackData.followUpSuggestions,
+                      resolvedModel: candidateModel,
+                      routedModelId: effectiveModelId,
+                    },
+                  })}\n\n`
+                );
+              }
               accumulated += chunk.text;
+              safeSseWrite(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
             }
           }
           const cleaned = verifyAndRepairModelOutput(accumulated, {
@@ -2792,6 +2900,12 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
           });
           if (cleaned) {
             const liveLatencyMs = recordLatencyTelemetry(true);
+            if (cleaned.startsWith(accumulated) && cleaned.length > accumulated.length) {
+              const tailDelta = cleaned.slice(accumulated.length);
+              safeSseWrite(`data: ${JSON.stringify({ text: tailDelta })}\n\n`);
+            } else if (!sentAnyStreamChunk) {
+              streamCleanedChunks(cleaned);
+            }
             safeSseWrite(
               `data: ${JSON.stringify({
                 meta: {
@@ -2814,7 +2928,6 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
                 ? groundedCitations
                 : fallbackData.citations
             );
-            streamCleanedChunks(cleaned);
             safeSseWrite('data: [DONE]\n\n');
             return safeSseEnd();
           }
@@ -2822,12 +2935,16 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
           recordSdkModelFailure(candidateModel, err);
           const msg = String(err || '');
           if (
-            candidateModel === 'gemini-4-argon' &&
+            candidateModel.startsWith('gemini-4-') &&
             (msg.includes('Free Tier') ||
               msg.includes('limit: 0') ||
               msg.includes('429'))
           ) {
             paidMediaCooldownUntil = Date.now() + 180000;
+          }
+          if (sentAnyStreamChunk) {
+            safeSseWrite('data: [DONE]\n\n');
+            return safeSseEnd();
           }
         }
       }
@@ -3119,13 +3236,17 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
 
   app.get('/api/videos/:fileName', async (req, res) => {
     const rawName = String(req.params.fileName || '');
-    const safeName = rawName.replace(/[^a-zA-Z0-9_.-]/g, '');
-    if (!safeName.endsWith('.mp4')) {
+    const safeFilePath = resolveSafeStoredFilePath(
+      VIDEO_STORAGE_DIR,
+      rawName,
+      /^[a-zA-Z0-9_-]+\.mp4$/
+    );
+    if (!safeFilePath) {
       return res.status(404).end();
     }
 
-    let filePath = path.join(VIDEO_STORAGE_DIR, safeName);
-    if (safeName === 'showcase-veo.mp4' && !fs.existsSync(filePath)) {
+    let filePath = safeFilePath;
+    if (path.basename(safeFilePath) === 'showcase-veo.mp4' && !fs.existsSync(filePath)) {
       try {
         filePath = await ensureShowcaseMp4Ready();
       } catch {
@@ -3327,7 +3448,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
 
         const interaction = await ai.interactions.create(
           {
-            model: 'gemini-omni-1.1-flash',
+            model: 'gemini-omni-1.2-flash',
             ...(previousInteractionId && typeof previousInteractionId === 'string'
               ? { previous_interaction_id: previousInteractionId }
               : {}),
@@ -3362,7 +3483,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
               : isHighFidelity
               ? 'Google Veo 4K · 60fps'
               : 'Google Veo · Omni 1.1 Flash',
-            modelUsed: 'gemini-omni-1.1-flash',
+            modelUsed: 'gemini-omni-1.2-flash',
             resolution: displayRes,
             duration: videoDuration,
             highFidelity: isHighFidelity,
@@ -3378,24 +3499,26 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
         }
         if (videoPart?.uri) {
           let finalVideoUrl = videoPart.uri;
-          try {
-            const sep = videoPart.uri.includes('?') ? '&' : '?';
-            const dlResp = await fetch(
-              `${videoPart.uri}${
-                process.env.GEMINI_API_KEY
-                  ? `${sep}key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`
-                  : ''
-              }`
-            );
-            if (dlResp.ok) {
-              const arrBuf = await dlResp.arrayBuffer();
-              finalVideoUrl = saveBase64VideoFile(
-                videoId,
-                Buffer.from(arrBuf).toString('base64')
+          if (isTrustedGoogleApiMediaUrl(videoPart.uri)) {
+            try {
+              const sep = videoPart.uri.includes('?') ? '&' : '?';
+              const dlResp = await fetch(
+                `${videoPart.uri}${
+                  process.env.GEMINI_API_KEY
+                    ? `${sep}key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`
+                    : ''
+                }`
               );
+              if (dlResp.ok) {
+                const arrBuf = await dlResp.arrayBuffer();
+                finalVideoUrl = saveBase64VideoFile(
+                  videoId,
+                  Buffer.from(arrBuf).toString('base64')
+                );
+              }
+            } catch {
+              // Use URI if direct fetch fails
             }
-          } catch {
-            // Use URI if direct fetch fails
           }
           return res.json({
             id: videoId,
@@ -3411,7 +3534,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
               : isHighFidelity
               ? 'Google Veo 4K · 60fps'
               : 'Google Veo · Omni 1.1 Flash',
-            modelUsed: 'gemini-omni-1.1-flash',
+            modelUsed: 'gemini-omni-1.2-flash',
             resolution: displayRes,
             duration: videoDuration,
             highFidelity: isHighFidelity,
@@ -3485,7 +3608,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
               ? 'Nano Banana 4K + Veo 60fps MP4'
               : 'Nano Banana + Veo Gerçek MP4'
             : diffused.engineBadge,
-          modelUsed: 'gemini-omni-1.1-flash',
+          modelUsed: 'gemini-omni-1.2-flash',
           resolution: displayRes,
           duration: videoDuration,
           highFidelity: isHighFidelity,
@@ -3554,7 +3677,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
           : isHighFidelity
           ? 'Google Veo 4K · 60fps MP4'
           : 'Google Veo · HD Sinema MP4',
-        modelUsed: 'gemini-omni-1.1-flash',
+        modelUsed: 'gemini-omni-1.2-flash',
         resolution: displayRes,
         duration: videoDuration,
         highFidelity: isHighFidelity,
@@ -3576,7 +3699,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
         style,
         aspectRatio: videoRatio,
         engineLabel: 'Google Veo · Sinema Motoru',
-        modelUsed: 'gemini-omni-1.1-flash',
+        modelUsed: 'gemini-omni-1.2-flash',
         resolution: displayRes,
         duration: videoDuration,
         highFidelity: isHighFidelity,
@@ -3637,7 +3760,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
 
         try {
           const scriptResp = await ai.models.generateContent({
-            model: 'gemini-3.8-flash',
+            model: 'gemini-4-hydrogen',
             contents: `"${cleanTopic}" konusu hakkında iki sunuculu (SunucuA ve SunucuB) 4 kısa replikten oluşan doğal, enerjik Türkçe mini podcast diyaloğu yaz. Her satır "SunucuA: ..." veya "SunucuB: ..." ile başlasın.`,
             config: {
               thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
@@ -3864,7 +3987,17 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
       .digest('hex')
       .slice(0, 18);
     const filename = `av_${digest}.${fileExt}`;
-    const fullFilePath = path.join(avatarsUploadDir, filename);
+    const fullFilePath = resolveSafeStoredFilePath(
+      avatarsUploadDir,
+      filename,
+      /^av_[a-f0-9]{18}\.(jpg|png|webp)$/
+    );
+    if (!fullFilePath) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Geçersiz profil resmi dosya yolu.',
+      });
+    }
     try {
       fs.writeFileSync(fullFilePath, buf);
       return res.json({
@@ -3879,11 +4012,38 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
     }
   });
 
+  app.post('/api/social/admin-claim', (req, res) => {
+    const uid = sanitizePlatformId(String(req.body?.uid || ''), 'usr');
+    if (!uid) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Geçerli bir kullanıcı kimliği gereklidir.',
+      });
+    }
+    if (claimedSocialAdminUid && claimedSocialAdminUid !== uid) {
+      return res.status(403).json({
+        ok: false,
+        error: 'Yönetici oturumu başka bir yetkili hesaba atanmış durumda.',
+      });
+    }
+    claimedSocialAdminUid = uid;
+    const adminToken = signSocialAdminToken(uid, SOCIAL_ADMIN_HMAC_SECRET);
+    return res.json({
+      ok: true,
+      claimedUid: uid,
+      adminToken,
+    });
+  });
+
   app.post('/api/social/events', (req, res) => {
-    const roleHeader = String(req.headers['x-luxo-role'] || '').toLowerCase();
-    const actorRole: PlatformUserRole =
-      roleHeader === 'admin' || req.body?.role === 'admin' ? 'admin' : 'member';
-    const outcome = createPlatformEvent(serverSocialState, actorRole, {
+    const adminToken = String(req.headers['x-luxo-admin-token'] || '');
+    const isVerifiedAdminToken = verifySocialAdminToken(
+      adminToken,
+      claimedSocialAdminUid,
+      SOCIAL_ADMIN_HMAC_SECRET
+    );
+    const actorRole: PlatformUserRole = isVerifiedAdminToken ? 'admin' : 'member';
+    const outcome: any = createPlatformEvent(serverSocialState, actorRole, {
       title: String(req.body?.title || ''),
       description: String(req.body?.description || ''),
       category: req.body?.category,
@@ -3915,10 +4075,14 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
   });
 
   app.post('/api/social/announcements', (req, res) => {
-    const roleHeader = String(req.headers['x-luxo-role'] || '').toLowerCase();
-    const actorRole: PlatformUserRole =
-      roleHeader === 'admin' || req.body?.role === 'admin' ? 'admin' : 'member';
-    const outcome = createPlatformAnnouncement(serverSocialState, actorRole, {
+    const adminToken = String(req.headers['x-luxo-admin-token'] || '');
+    const isVerifiedAdminToken = verifySocialAdminToken(
+      adminToken,
+      claimedSocialAdminUid,
+      SOCIAL_ADMIN_HMAC_SECRET
+    );
+    const actorRole: PlatformUserRole = isVerifiedAdminToken ? 'admin' : 'member';
+    const outcome: any = createPlatformAnnouncement(serverSocialState, actorRole, {
       title: String(req.body?.title || ''),
       summary: String(req.body?.summary || ''),
       priority: req.body?.priority,
@@ -3980,7 +4144,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
       uid,
       displayName: String(req.body?.displayName || 'Topluluk Üyesi'),
     });
-    const outcome = upsertSocialProfile(seeded, {
+    const outcome: any = upsertSocialProfile(seeded, {
       uid,
       displayName: String(req.body?.displayName || ''),
       handle: String(req.body?.handle || ''),
@@ -4074,7 +4238,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
       uid: actorUid,
       displayName: String(req.body?.actorName || 'Topluluk Üyesi'),
     });
-    const outcome = getOrCreateDirectMessageRoom(seeded, actorUid, targetUid);
+    const outcome: any = getOrCreateDirectMessageRoom(seeded, actorUid, targetUid);
     if (!outcome.ok) {
       return res.status(400).json({ ok: false, error: outcome.error });
     }
@@ -4102,7 +4266,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
       uid: ownerUid,
       displayName: String(req.body?.ownerName || 'Topluluk Üyesi'),
     });
-    const outcome = createPrivateChatRoom(seeded, {
+    const outcome: any = createPrivateChatRoom(seeded, {
       id: req.body?.id ? String(req.body.id) : undefined,
       name: String(req.body?.name || ''),
       topic: String(req.body?.topic || ''),
@@ -4140,7 +4304,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
       uid: senderUid,
       displayName: String(req.body?.senderName || 'Topluluk Üyesi'),
     });
-    const outcome = appendRoomMessage(seeded, {
+    const outcome: any = appendRoomMessage(seeded, {
       id: req.body?.id ? String(req.body.id) : undefined,
       roomId,
       senderUid,
@@ -4354,8 +4518,8 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
   ensureShowcaseMp4Ready().catch(() => {});
 
   const httpServer = http.createServer(app);
-  const wss = new WebSocketServer({ noServer: true });
-  const socialWss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 });
+  const socialWss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 });
 
   httpServer.on('upgrade', (req, socket, head) => {
     const urlPath = req.url || '';
@@ -4471,7 +4635,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
       if (eventType === 'message:send') {
         const roomId = String(msg.roomId || clientInfo.activeRoomId || '');
         const content = String(msg.content || '');
-        const outcome = appendRoomMessage(serverSocialState, {
+        const outcome: any = appendRoomMessage(serverSocialState, {
           id: typeof msg.id === 'string' ? msg.id : undefined,
           roomId,
           senderUid: clientInfo.uid,

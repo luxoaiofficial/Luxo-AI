@@ -168,7 +168,7 @@ function evaluateDirtyDozen(
   return 'PERMISSION_DENIED';
 }
 
-test('firestore.rules enforces Eight Pillars and matches all 11 firebase-blueprint.json paths & 115 models', () => {
+test('firestore.rules enforces Eight Pillars and matches all 11 firebase-blueprint.json paths & 122 models', () => {
   assert.ok(rulesSource.includes("rules_version = '2';"));
   assert.ok(
     rulesSource.includes('match /{document=**} {\n      allow read, write: if false;')
@@ -469,3 +469,12 @@ test('All Dirty Dozen & Red Team adversarial payloads return PERMISSION_DENIED',
     'ALLOWED'
   );
 });
+
+test('Firebase blueprint and firestore.rules declare hardened LangdockWorkspaceItem rules', () => {
+  assert.ok(blueprint.entities.LangdockWorkspaceItem);
+  assert.ok(blueprint.firestore['/users/{userId}/workspaceItems/{itemId}']);
+  assert.ok(rulesSource.includes('function isValidLangdockWorkspaceItem(data)'));
+  assert.ok(rulesSource.includes('match /workspaceItems/{itemId}'));
+  assert.ok(rulesSource.includes("data.itemType in ['assistant', 'prompt', 'knowledge', 'workflow', 'integration']"));
+});
+

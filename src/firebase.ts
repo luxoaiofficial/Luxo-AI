@@ -1041,3 +1041,152 @@ export async function syncRoomMessageToFirestore(input: {
   }
 }
 
+export async function verifyFirestoreServerHealth(): Promise<{
+  ok: boolean;
+  latencyMs: number;
+  projectId: string;
+  databaseId: string;
+  authenticatedUid: string | null;
+  errorMessage?: string;
+}> {
+  const startedAt = Date.now();
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+    return {
+      ok: true,
+      latencyMs: Math.max(1, Date.now() - startedAt),
+      projectId: firebaseConfig.projectId,
+      databaseId: firestoreDatabaseId || '(default)',
+      authenticatedUid: auth.currentUser?.uid || null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      latencyMs: Math.max(1, Date.now() - startedAt),
+      projectId: firebaseConfig.projectId,
+      databaseId: firestoreDatabaseId || '(default)',
+      authenticatedUid: auth.currentUser?.uid || null,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export interface SyncedLangdockFirestoreRecord {
+  id: string;
+  itemType: 'assistant' | 'prompt' | 'knowledge' | 'workflow' | 'integration';
+  title: string;
+  category: string;
+  modelId: string;
+  content: string;
+  isEnabled: boolean;
+  updatedAtMs: number;
+}
+
+export async function syncLangdockItemToFirestore(input: {
+  id: string;
+  itemType: 'assistant' | 'prompt' | 'knowledge' | 'workflow' | 'integration';
+  title: string;
+  category: string;
+  modelId: string;
+  content: string;
+  isEnabled: boolean;
+}): Promise<boolean> {
+  if (!auth.currentUser || !auth.currentUser.emailVerified) return false;
+  const uid = await ensureParentUserDocReady(auth.currentUser);
+  const itemId = sanitizeSafeId(input.id);
+  const path = `users/${uid}/workspaceItems/${itemId}`;
+  const itemRef = doc(db, 'users', uid, 'workspaceItems', itemId);
+
+  const safeTitle = safeBoundedStr(input.title, 'Langdock Öğesi', 120);
+  const safeCategory = safeBoundedStr(input.category, 'Genel', 60);
+  const safeModelId = safeBoundedStr(input.modelId, 'gemini-4-hydrogen', 40);
+  const safeContent = String(input.content || '').slice(0, 4000);
+
+  try {
+    const snap = await getDoc(itemRef);
+    if (!snap.exists()) {
+      await setDoc(itemRef, {
+        itemId,
+        ownerId: uid,
+        itemType: input.itemType,
+        title: safeTitle,
+        category: safeCategory,
+        modelId: safeModelId,
+        content: safeContent,
+        isEnabled: Boolean(input.isEnabled),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await updateDoc(itemRef, {
+        title: safeTitle,
+        category: safeCategory,
+        modelId: safeModelId,
+        content: safeContent,
+        isEnabled: Boolean(input.isEnabled),
+        updatedAt: serverTimestamp(),
+      });
+    }
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deleteLangdockItemFromFirestore(
+  itemIdRaw: string
+): Promise<void> {
+  if (!auth.currentUser || !auth.currentUser.emailVerified) return;
+  const uid = await ensureParentUserDocReady(auth.currentUser);
+  const itemId = sanitizeSafeId(itemIdRaw);
+  const path = `users/${uid}/workspaceItems/${itemId}`;
+  const itemRef = doc(db, 'users', uid, 'workspaceItems', itemId);
+
+  try {
+    const snap = await getDoc(itemRef);
+    if (snap.exists()) {
+      await deleteDoc(itemRef);
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export function subscribeLangdockWorkspaceItems(
+  uidRaw: string,
+  onReceive: (items: SyncedLangdockFirestoreRecord[]) => void
+): () => void {
+  const current = auth.currentUser;
+  if (!current || !uidRaw) return () => {};
+  const uid = sanitizeSafeId(current.uid);
+  if (sanitizeSafeId(uidRaw) !== uid) return () => {};
+
+  const path = `users/${uid}/workspaceItems`;
+  const colRef = collection(db, 'users', uid, 'workspaceItems');
+  const q = query(colRef, where('ownerId', '==', uid));
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const items: SyncedLangdockFirestoreRecord[] = snapshot.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: String(data.itemId || d.id),
+          itemType: (data.itemType as SyncedLangdockFirestoreRecord['itemType']) || 'assistant',
+          title: String(data.title || 'Öğe'),
+          category: String(data.category || 'Genel'),
+          modelId: String(data.modelId || 'gemini-4-hydrogen'),
+          content: String(data.content || ''),
+          isEnabled: Boolean(data.isEnabled),
+          updatedAtMs: Date.now(),
+        };
+      });
+      onReceive(items);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, path);
+    }
+  );
+}
+
+

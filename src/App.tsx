@@ -4,18 +4,14 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
+import { MotionConfig } from 'framer-motion';
 import {
   ArrowRight,
   Check,
   Copy,
   Eye,
-  Globe,
-  LayoutDashboard,
-  MessageSquare,
   MessageSquarePlus,
   QrCode,
-  Search,
-  Settings,
   Share2,
   X,
 } from 'lucide-react';
@@ -63,8 +59,10 @@ import {
   normalizeCinematicMotion,
   parseShareParams,
   sanitizeLuxoBrand,
+  scoreAutoRouterModel,
   shouldGenerateImageInChat,
   shouldGenerateVideoInChat,
+  validateModelCatalogPassword,
   verifyAndRepairModelOutput,
 } from './utils/luxoLogic';
 import {
@@ -109,6 +107,7 @@ import { retryDynamicImport } from './utils/moduleLoader';
 import type { HubTabId } from './components/CommunitySeoHub';
 import { VoiceCommandModal } from './components/VoiceCommandModal';
 import { GmailWorkspaceModal } from './components/GmailWorkspaceModal';
+import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 
 const ArgonCodeStudio = React.lazy(() =>
   retryDynamicImport(() =>
@@ -284,7 +283,7 @@ function stripSensitiveUserFields(raw: Record<string, unknown>): LuxoUser {
     defaultModelId:
       typeof raw.defaultModelId === 'string'
         ? (raw.defaultModelId as any)
-        : 'luxo-auto-router',
+        : 'gemini-4-carbon',
     reasoningLevel:
       raw.reasoningLevel === 'fast' || raw.reasoningLevel === 'deep'
         ? raw.reasoningLevel
@@ -401,7 +400,7 @@ export default function App() {
     if (def && def in LUXO_MODELS && canAccessModel(def, user).allowed) {
       return def;
     }
-    return 'luxo-auto-router';
+    return 'gemini-4-carbon';
   });
   const [projects, setProjects] = useState<LuxoProject[]>(INITIAL_PROJECTS);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
@@ -449,8 +448,24 @@ export default function App() {
     return createInitialStudioArticles();
   });
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isKeyboardShortcutsOpen, setIsKeyboardShortcutsOpen] = useState(false);
   const [compareTriggerCount, setCompareTriggerCount] = useState(0);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isCatalogUnlocked, setIsCatalogUnlocked] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('luxo_model_catalog_unlocked') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [showExtendedModelsInChat, setShowExtendedModelsInChat] =
+    useState<boolean>(() => {
+      try {
+        return localStorage.getItem('luxo_show_extended_in_chat') === 'true';
+      } catch {
+        return false;
+      }
+    });
   const [lastCloudSync, setLastCloudSync] = useState<{
     chatId: string;
     syncedAt: number;
@@ -699,10 +714,98 @@ export default function App() {
   }, [isDarkTheme]);
 
   useEffect(() => {
+    const isEditableTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      return (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        target.isContentEditable
+      );
+    };
+
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      const mod = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
+
+      if (mod && key === 'k') {
         e.preventDefault();
         setIsCommandPaletteOpen((prev) => !prev);
+        return;
+      }
+
+      if (mod && (e.key === '/' || e.key === '?')) {
+        e.preventDefault();
+        setIsKeyboardShortcutsOpen((prev) => !prev);
+        return;
+      }
+
+      if (!mod && !e.altKey && e.key === '?' && !isEditableTarget(e.target)) {
+        e.preventDefault();
+        setIsKeyboardShortcutsOpen((prev) => !prev);
+        return;
+      }
+
+      if (mod && !e.shiftKey && key === 'b') {
+        e.preventDefault();
+        setIsSidebarOpen((prev) => !prev);
+        return;
+      }
+
+      if (mod && !e.shiftKey && e.key === ',') {
+        e.preventDefault();
+        setSettingsSubModal(null);
+        setCurrentView('settings');
+        return;
+      }
+
+      if (mod && e.shiftKey && key === 'o') {
+        e.preventDefault();
+        setActiveChatId(null);
+        setCurrentView('chat');
+        return;
+      }
+
+      if (mod && e.shiftKey && key === 'e') {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('luxo-export-active-chat-pdf'));
+        return;
+      }
+
+      if (e.altKey && !mod) {
+        if (key === 'd') {
+          e.preventDefault();
+          setDashboardFocusSection('overview');
+          setCurrentView('dashboard');
+          return;
+        }
+        if (key === 't') {
+          e.preventDefault();
+          const darkNow = document.documentElement.classList.contains('dark');
+          setUser((prev) => ({
+            ...prev,
+            theme: darkNow ? 'light' : 'dark',
+          }));
+          return;
+        }
+        if (key === 's') {
+          e.preventDefault();
+          setHubInitialTab(undefined);
+          setCurrentView('hub');
+          return;
+        }
+        if (key === 'm') {
+          e.preventDefault();
+          setIsVoiceCommandModalOpen(true);
+          return;
+        }
+      }
+
+      if (e.key === 'Escape') {
+        setIsSidebarOpen(false);
+        setIsKeyboardShortcutsOpen(false);
+        setIsNotificationsOpen(false);
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -807,6 +910,28 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('luxo_chats', JSON.stringify(chats));
   }, [chats]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'luxo_model_catalog_unlocked',
+        isCatalogUnlocked ? 'true' : 'false'
+      );
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [isCatalogUnlocked]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'luxo_show_extended_in_chat',
+        showExtendedModelsInChat ? 'true' : 'false'
+      );
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [showExtendedModelsInChat]);
 
   useEffect(() => {
     localStorage.setItem(TRAINING_CONSENT_STORAGE_KEY, trainingConsent);
@@ -1365,6 +1490,51 @@ export default function App() {
     }).catch(() => {});
   };
 
+  const handleUnlockModelCatalog = (code: string): boolean => {
+    if (!validateModelCatalogPassword(code)) {
+      return false;
+    }
+    setIsCatalogUnlocked(true);
+    try {
+      localStorage.setItem('luxo_model_catalog_unlocked', 'true');
+      if (code.trim() === 'serpilmurat123') {
+        localStorage.setItem('luxo_dev_unlocked', 'true');
+        localStorage.setItem('luxo_dev_helper_unlocked', 'true');
+        setUser((prev) => ({
+          ...prev,
+          isUnlockedDev: true,
+          isUnlockedDevHelper: true,
+        }));
+      } else {
+        localStorage.setItem('luxo_dev_helper_unlocked', 'true');
+        setUser((prev) => ({
+          ...prev,
+          isUnlockedDevHelper: true,
+        }));
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return true;
+  };
+
+  const handleLockModelCatalog = () => {
+    setIsCatalogUnlocked(false);
+    setShowExtendedModelsInChat(false);
+    try {
+      localStorage.removeItem('luxo_model_catalog_unlocked');
+      localStorage.setItem('luxo_show_extended_in_chat', 'false');
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleSelectModelFromSettings = (modelId: LuxoModelId) => {
+    setActiveModelId(modelId);
+    handleUpdateUser({ defaultModelId: modelId });
+    setCurrentView('chat');
+  };
+
   const handleSendMessage = async (
     text: string,
     attachment?: File,
@@ -1381,6 +1551,7 @@ export default function App() {
       imageAspectRatio?: VisualAspectRatio;
       imageStyle?: string;
       referenceImageDataUrl?: string;
+      extraSystemContext?: string;
     }
   ) => {
     if (user.isGuest && user.guestMessageCount >= GUEST_MESSAGE_LIMIT) {
@@ -1393,20 +1564,34 @@ export default function App() {
         (attachment ? `"${attachment.name}" dosyasını detaylı analiz et.` : '')
     );
 
+    const autoRouterDecision =
+      activeModelId === 'luxo-auto-router'
+        ? scoreAutoRouterModel({
+            prompt: cleanUserText,
+            reasoningLevel: user.reasoningLevel || 'balanced',
+            codeStrictness: user.codeStrictness || 'production',
+            webSearch: options?.webSearch,
+            hasAttachment: Boolean(attachment),
+            evolutionState,
+          })
+        : null;
+    const routedModelId: LuxoModelId =
+      autoRouterDecision?.targetModelId || activeModelId;
+
     const isVideoGenTurn =
       options?.forceMediaMode === 'video' ||
       (options?.forceMediaMode !== 'image' &&
         !options?.overrideVideoUrl &&
         !options?.overrideImageUrl &&
         !attachment &&
-        shouldGenerateVideoInChat(cleanUserText, activeModelId));
+        shouldGenerateVideoInChat(cleanUserText, routedModelId));
 
     const isImageGenTurn =
       !isVideoGenTurn &&
       (options?.forceMediaMode === 'image' ||
         (!options?.overrideImageUrl &&
           !attachment &&
-          shouldGenerateImageInChat(cleanUserText, activeModelId)));
+          shouldGenerateImageInChat(cleanUserText, routedModelId)));
 
     // Pre-Render 'Cinematic Motion Controller' Gate: let user dynamically tune speed, pan, and tilt BEFORE Google Veo 3 begins rendering
     if (isVideoGenTurn && !options?.skipMotionController) {
@@ -1517,7 +1702,7 @@ export default function App() {
       role: 'assistant',
       content: '',
       timestamp: Date.now(),
-      modelId: activeModelId,
+      modelId: routedModelId,
     };
 
     setChats((prev) =>
@@ -1790,7 +1975,9 @@ export default function App() {
           customFormatting: user.customFormatting,
           customEmoji: user.customEmoji,
           memoryItems,
-          projectContext: activeProject?.systemPrompt,
+          projectContext: [activeProject?.systemPrompt, options?.extraSystemContext]
+            .filter(Boolean)
+            .join('\n\n') || undefined,
           webSearch: options?.webSearch,
           deepReasoning: options?.deepReasoning,
           synthesisMode: options?.synthesisMode,
@@ -1902,7 +2089,7 @@ export default function App() {
               ? data.latencyMs
               : Math.max(120, Date.now() - chatRequestStartMs);
           const telemetryModel = (data.resolvedModel ||
-            activeModelId) as LuxoModelId;
+            routedModelId) as LuxoModelId;
           setEvolutionState((prev) =>
             recordModelUsageInState(prev, telemetryModel, {
               latencyMs: measuredLatencyMs,
@@ -1934,11 +2121,14 @@ export default function App() {
     } catch {
       const fallback = generateLocalSmartResponse(
         cleanUserText,
-        activeModelId,
+        routedModelId,
         {
-          webSearch: options?.webSearch,
+          webSearch:
+            options?.webSearch || Boolean(autoRouterDecision?.autoWebSearch),
           deepReasoning:
-            options?.deepReasoning || user.reasoningLevel === 'deep',
+            options?.deepReasoning ||
+            Boolean(autoRouterDecision?.autoDeepReasoning) ||
+            user.reasoningLevel === 'deep',
           synthesisMode: options?.synthesisMode,
           conversationHistory: updatedMessages.map((m) => ({
             role: m.role,
@@ -2007,7 +2197,7 @@ export default function App() {
         role: 'assistant',
         content: finalAssistantText,
         timestamp: Date.now(),
-        modelId: activeModelId,
+        modelId: routedModelId,
         thinkingSteps: finalThinkingSteps,
         citations: finalCitations,
         followUpSuggestions: finalFollowUps,
@@ -2016,7 +2206,7 @@ export default function App() {
         const completedThread: ChatThread = {
           id: targetChatId,
           title: resolvedTitle,
-          modelId: activeModelId,
+          modelId: routedModelId,
           createdAt: Date.now(),
           updatedAt: Date.now(),
           messages: [
@@ -2026,7 +2216,7 @@ export default function App() {
               role: 'assistant',
               content: finalAssistantText,
               timestamp: Date.now(),
-              modelId: activeModelId,
+              modelId: routedModelId,
             },
           ],
         };
@@ -2036,7 +2226,7 @@ export default function App() {
         submitConsentedChatSignal(
           cleanUserText,
           finalAssistantText,
-          activeModelId,
+          routedModelId,
           'complete'
         );
       }
@@ -2380,6 +2570,7 @@ export default function App() {
   };
 
   return (
+    <MotionConfig reducedMotion="user">
     <div className="w-full h-screen overflow-hidden flex flex-col bg-white dark:bg-[#18181b] text-neutral-900 dark:text-neutral-100">
       {sharedIncoming && (
         <div className="px-4 py-2.5 bg-indigo-600/10 dark:bg-indigo-500/15 border-b border-indigo-500/25 flex items-center justify-between gap-3 shrink-0 z-30">
@@ -2692,6 +2883,12 @@ export default function App() {
 
         {currentView === 'chat' && (
           <ChatWorkspace
+            onOpenExtendedCatalog={() => {
+              setSettingsSubModal('all_models');
+              setCurrentView('settings');
+            }}
+            showExtendedCatalog={isCatalogUnlocked && showExtendedModelsInChat}
+            isCatalogUnlocked={isCatalogUnlocked}
             currentChat={activeChat}
             activeModelId={activeModelId}
             activeProject={activeProject}
@@ -3007,6 +3204,7 @@ export default function App() {
               unreadNotificationCount={unreadNotificationCount}
               onOpenNotifications={() => setIsNotificationsOpen(true)}
               onOpenGmail={() => setIsGmailModalOpen(true)}
+              onOpenKeyboardShortcuts={() => setIsKeyboardShortcutsOpen(true)}
               onResendVerification={async () => {
                 await resendVerificationEmail();
               }}
@@ -3019,6 +3217,13 @@ export default function App() {
               }}
               onPasswordResetRequest={() => setIsAuthModalOpen(true)}
               initialSubModal={settingsSubModal}
+              isCatalogUnlocked={isCatalogUnlocked}
+              onUnlockModelCatalog={handleUnlockModelCatalog}
+              onLockModelCatalog={handleLockModelCatalog}
+              activeModelId={activeModelId}
+              onSelectModelFromSettings={handleSelectModelFromSettings}
+              showExtendedModelsInChat={showExtendedModelsInChat}
+              onToggleExtendedModelsInChat={setShowExtendedModelsInChat}
             />
           )}
         </React.Suspense>
@@ -3033,6 +3238,7 @@ export default function App() {
           !isVoiceModalOpen &&
           !isVoiceCommandModalOpen &&
           !isCommandPaletteOpen &&
+          !isKeyboardShortcutsOpen &&
           !isNotificationsOpen && (
             <button
               type="button"
@@ -3082,6 +3288,7 @@ export default function App() {
             setSettingsSubModal(sub || null);
             setCurrentView('settings');
           }}
+          onOpenKeyboardShortcuts={() => setIsKeyboardShortcutsOpen(true)}
           onOpenFeedback={() => setIsFeedbackModalOpen(true)}
           unreadNotificationCount={unreadNotificationCount}
           onOpenNotifications={() => setIsNotificationsOpen(true)}
@@ -3322,6 +3529,11 @@ export default function App() {
           onClose={() => setIsGmailModalOpen(false)}
         />
 
+        <KeyboardShortcutsModal
+          isOpen={isKeyboardShortcutsOpen}
+          onClose={() => setIsKeyboardShortcutsOpen(false)}
+        />
+
         {pendingVeoRequest && (
           <CinematicMotionController
             mode="modal"
@@ -3361,90 +3573,7 @@ export default function App() {
           />
         )}
       </div>
-
-      {currentView !== 'welcome' && (
-        <nav
-          data-testid="mobile-bottom-nav"
-          aria-label="Mobil Alt Gezinme Çubuğu"
-          className="md:hidden shrink-0 h-16 bg-white/95 dark:bg-[#14151a]/95 backdrop-blur-md border-t border-neutral-200/80 dark:border-neutral-800 grid grid-cols-5 items-center px-1.5 pb-1 z-30 shadow-[0_-4px_20px_rgba(0,0,0,0.04)]"
-        >
-          <button
-            type="button"
-            data-testid="mobile-nav-chat-btn"
-            onClick={() => setCurrentView('chat')}
-            className={`min-h-[44px] h-12 rounded-2xl flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition active:scale-95 cursor-pointer ${
-              currentView === 'chat'
-                ? 'bg-blue-600/10 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400'
-                : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100/70 dark:hover:bg-neutral-800/60'
-            }`}
-          >
-            <MessageSquare className="w-4 h-4" />
-            <span>Sohbet</span>
-          </button>
-
-          <button
-            type="button"
-            data-testid="mobile-nav-search-btn"
-            onClick={() => setIsCommandPaletteOpen(true)}
-            className={`min-h-[44px] h-12 rounded-2xl flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition active:scale-95 cursor-pointer ${
-              isCommandPaletteOpen
-                ? 'bg-blue-600/10 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400'
-                : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100/70 dark:hover:bg-neutral-800/60'
-            }`}
-          >
-            <Search className="w-4 h-4" />
-            <span>Ara</span>
-          </button>
-
-          <button
-            type="button"
-            data-testid="mobile-nav-hub-btn"
-            onClick={() => {
-              setHubInitialTab('blog-polls');
-              setCurrentView('hub');
-            }}
-            className={`min-h-[44px] h-12 rounded-2xl flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition active:scale-95 cursor-pointer ${
-              currentView === 'hub'
-                ? 'bg-blue-600/10 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400'
-                : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100/70 dark:hover:bg-neutral-800/60'
-            }`}
-          >
-            <Globe className="w-4 h-4" />
-            <span>Topluluk</span>
-          </button>
-
-          <button
-            type="button"
-            data-testid="mobile-nav-dashboard-btn"
-            onClick={() => handleOpenDashboard('overview')}
-            className={`min-h-[44px] h-12 rounded-2xl flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition active:scale-95 cursor-pointer ${
-              currentView === 'dashboard'
-                ? 'bg-blue-600/10 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400'
-                : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100/70 dark:hover:bg-neutral-800/60'
-            }`}
-          >
-            <LayoutDashboard className="w-4 h-4" />
-            <span>Panel</span>
-          </button>
-
-          <button
-            type="button"
-            data-testid="mobile-nav-settings-btn"
-            onClick={() => {
-              setSettingsSubModal(null);
-              setCurrentView('settings');
-            }}
-            className={`min-h-[44px] h-12 rounded-2xl flex flex-col items-center justify-center gap-0.5 text-[10px] font-semibold transition active:scale-95 cursor-pointer ${
-              currentView === 'settings'
-                ? 'bg-blue-600/10 dark:bg-blue-500/15 text-blue-600 dark:text-blue-400'
-                : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100/70 dark:hover:bg-neutral-800/60'
-            }`}
-          >
-            <Settings className="w-4 h-4" />
-            <span>Ayarlar</span>
-          </button>
-        </nav>
-      )}
     </div>
+    </MotionConfig>
   );
 }

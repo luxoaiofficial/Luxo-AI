@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import {
-  CircleAlert,
+  AlertCircle,
   Columns2,
   Key,
-  LoaderCircle,
+  Loader2,
   Mail,
   ShieldCheck,
   Users,
@@ -122,7 +122,7 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({
 
             {errorMessage && (
               <div className="w-full p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 rounded-2xl flex items-start gap-2.5 text-xs text-red-700 dark:text-red-300 text-left">
-                <CircleAlert className="w-4 h-4 shrink-0 mt-0.5" />
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <div className="flex-1 leading-relaxed">{errorMessage}</div>
               </div>
             )}
@@ -154,7 +154,7 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({
                 className="w-full flex items-center justify-center gap-3 py-3.5 px-4 bg-black hover:bg-neutral-800 text-white dark:bg-white dark:text-black dark:hover:bg-neutral-200 font-semibold rounded-full text-sm sm:text-base transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer whitespace-nowrap"
               >
                 {loadingGoogle ? (
-                  <LoaderCircle className="w-5 h-5 animate-spin" />
+                  <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
                   <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
                     <path

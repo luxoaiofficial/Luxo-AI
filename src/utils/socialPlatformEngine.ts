@@ -990,7 +990,7 @@ export function createGeneralFeedPost(
       },
       now
     );
-    if (!evtOutcome.ok) return evtOutcome;
+    if (!evtOutcome.ok) return evtOutcome as any;
     return {
       ok: true,
       kind: 'event',
@@ -1020,7 +1020,7 @@ export function createGeneralFeedPost(
     },
     now
   );
-  if (!annOutcome.ok) return annOutcome;
+  if (!annOutcome.ok) return annOutcome as any;
   return {
     ok: true,
     kind: 'announcement',

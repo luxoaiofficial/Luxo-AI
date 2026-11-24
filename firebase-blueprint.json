@@ -629,6 +629,11 @@
             "openai-o4-mini",
             "openai-o1-pro",
             "openai-codex-agent",
+            "gpt-astra",
+            "claude-5-2-fable",
+            "claude-5-5-opus",
+            "claude-5-5-sonnet",
+            "claude-5-5-haiku",
             "claude-4-6-opus",
             "claude-4-5-sonnet",
             "claude-4-opus",
@@ -706,6 +711,8 @@
             "luxo-ultra",
             "luxo-argon",
             "luxo-quantum-math",
+            "luxo-sol",
+            "luxo-luna",
             "luxo-dev-helper",
             "luxo-dev"
           ],
@@ -812,6 +819,82 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "LangdockWorkspaceItem": {
+      "title": "LangdockWorkspaceItem",
+      "description": "Langdock workspace assistant, prompt template, knowledge document, workflow, or integration config owned by a verified user.",
+      "type": "object",
+      "properties": {
+        "itemId": {
+          "type": "string",
+          "description": "Unique workspace item ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the user who owns this workspace item.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "itemType": {
+          "type": "string",
+          "description": "Langdock module category.",
+          "enum": ["assistant", "prompt", "knowledge", "workflow", "integration"],
+          "maxLength": 24
+        },
+        "title": {
+          "type": "string",
+          "description": "Display title of the assistant, prompt, or document.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "category": {
+          "type": "string",
+          "description": "Folder or workspace category label.",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "modelId": {
+          "type": "string",
+          "description": "Associated Luxo AI model ID.",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "content": {
+          "type": "string",
+          "description": "Prompt text, instructions, knowledge body, or JSON config payload.",
+          "maxLength": 4000
+        },
+        "isEnabled": {
+          "type": "boolean",
+          "description": "Active toggle status."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "itemId",
+        "ownerId",
+        "itemType",
+        "title",
+        "category",
+        "modelId",
+        "content",
+        "isEnabled",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -834,6 +917,10 @@
     "/users/{userId}/connections/{peerId}": {
       "schema": { "$ref": "#/entities/SocialConnection" },
       "description": "User's followings and friend connections."
+    },
+    "/users/{userId}/workspaceItems/{itemId}": {
+      "schema": { "$ref": "#/entities/LangdockWorkspaceItem" },
+      "description": "User's Langdock enterprise assistants, prompts, knowledge docs, workflows, and integration settings."
     },
     "/publicProfiles/{userId}": {
       "schema": { "$ref": "#/entities/PublicSocialProfile" },

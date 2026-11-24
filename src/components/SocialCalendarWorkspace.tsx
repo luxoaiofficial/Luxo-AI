@@ -111,6 +111,32 @@ export const SocialCalendarWorkspace: React.FC<SocialCalendarWorkspaceProps> = (
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeRoomRef = useRef(activeRoomId);
   activeRoomRef.current = activeRoomId;
+  const [adminToken, setAdminToken] = useState<string>('');
+
+  const ensureServerAdminToken = useCallback(async (): Promise<string> => {
+    if (adminToken) return adminToken;
+    try {
+      const resp = await fetch('/api/social/admin-claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: currentUid,
+          displayName:
+            user.name && user.name !== 'Misafir Kullanıcı'
+              ? user.name
+              : 'Platform Yönetimi',
+        }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data?.ok && typeof data.adminToken === 'string') {
+        setAdminToken(data.adminToken);
+        return data.adminToken;
+      }
+    } catch {
+      // fallback handled by server rejection
+    }
+    return '';
+  }, [adminToken, currentUid, user.name]);
 
   useEffect(() => {
     if (verifiedAdmin && actorRole !== 'admin') {
@@ -118,9 +144,18 @@ export const SocialCalendarWorkspace: React.FC<SocialCalendarWorkspaceProps> = (
     }
   }, [verifiedAdmin, actorRole]);
 
+  useEffect(() => {
+    if (actorRole === 'admin' && !adminToken) {
+      void ensureServerAdminToken();
+    }
+  }, [actorRole, adminToken, ensureServerAdminToken]);
+
   const handleChangeRole = (nextRole: PlatformUserRole) => {
     setActorRole(nextRole);
     localStorage.setItem(LOCAL_SOCIAL_ROLE_KEY, nextRole);
+    if (nextRole === 'admin') {
+      void ensureServerAdminToken();
+    }
   };
 
   // Initial authoritative HTTP fetch
@@ -321,15 +356,16 @@ export const SocialCalendarWorkspace: React.FC<SocialCalendarWorkspaceProps> = (
       capacity: number;
     }): Promise<{ ok: boolean; error?: string }> => {
       try {
+        const token =
+          actorRole === 'admin' ? await ensureServerAdminToken() : '';
         const resp = await fetch('/api/social/events', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-luxo-role': actorRole,
+            ...(token ? { 'x-luxo-admin-token': token } : {}),
           },
           body: JSON.stringify({
             ...input,
-            role: actorRole,
             createdByUid: currentUid,
             createdByName: myProfile?.displayName || 'Platform Yönetimi',
           }),
@@ -347,7 +383,7 @@ export const SocialCalendarWorkspace: React.FC<SocialCalendarWorkspaceProps> = (
         return { ok: false, error: 'Sunucu bağlantısı kurulamadı.' };
       }
     },
-    [actorRole, currentUid, myProfile?.displayName]
+    [actorRole, currentUid, ensureServerAdminToken, myProfile?.displayName]
   );
 
   const handleCreateAnnouncement = useCallback(
@@ -360,15 +396,16 @@ export const SocialCalendarWorkspace: React.FC<SocialCalendarWorkspaceProps> = (
       dateIso?: string;
     }): Promise<{ ok: boolean; error?: string }> => {
       try {
+        const token =
+          actorRole === 'admin' ? await ensureServerAdminToken() : '';
         const resp = await fetch('/api/social/announcements', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-luxo-role': actorRole,
+            ...(token ? { 'x-luxo-admin-token': token } : {}),
           },
           body: JSON.stringify({
             ...input,
-            role: actorRole,
             createdByUid: currentUid,
             createdByName: myProfile?.displayName || 'Platform Yönetimi',
           }),
@@ -383,10 +420,10 @@ export const SocialCalendarWorkspace: React.FC<SocialCalendarWorkspaceProps> = (
         }
         return { ok: true };
       } catch {
-        return { ok: false, error: 'Sunucu bağlantısı kurulamadı.' };
+        return { ok: false, error: 'Sunucu bağlantısı sağlanamadı.' };
       }
     },
-    [actorRole, currentUid, myProfile?.displayName]
+    [actorRole, currentUid, ensureServerAdminToken, myProfile?.displayName]
   );
 
   const handleCreateFeedPost = useCallback(
@@ -723,17 +760,18 @@ export const SocialCalendarWorkspace: React.FC<SocialCalendarWorkspaceProps> = (
   return (
     <div className="flex flex-col h-full bg-neutral-50 dark:bg-[#141518] text-neutral-900 dark:text-neutral-100 overflow-hidden">
       {/* Top 3-Zone Header */}
-      <header className="flex items-center justify-between gap-4 sm:gap-8 px-4 sm:px-6 py-3.5 bg-white dark:bg-[#18181b] border-b border-neutral-200 dark:border-neutral-800 shrink-0">
-        <div className="flex items-center gap-3 shrink-0">
+      <header className="flex items-center justify-between gap-2 sm:gap-6 px-3 sm:px-6 py-3 bg-white dark:bg-[#18181b] border-b border-neutral-200 dark:border-neutral-800 shrink-0 min-w-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 sm:flex-initial">
           <button
             type="button"
             onClick={onBack}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-xs font-semibold text-neutral-800 dark:text-neutral-200 transition cursor-pointer whitespace-nowrap shrink-0"
+            className="min-h-[40px] inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-xs font-semibold text-neutral-800 dark:text-neutral-200 transition cursor-pointer whitespace-nowrap shrink-0"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Sohbete Dön</span>
+            <span className="hidden sm:inline">Sohbete Dön</span>
+            <span className="sm:hidden">Geri</span>
           </button>
-          <h1 className="text-base sm:text-lg font-bold tracking-tight text-neutral-900 dark:text-white whitespace-nowrap">
+          <h1 className="text-sm sm:text-lg font-bold tracking-tight text-neutral-900 dark:text-white truncate min-w-0">
             Etkinlik Takvimi & Sosyal Ağ
           </h1>
         </div>

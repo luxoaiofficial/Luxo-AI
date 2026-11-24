@@ -37,6 +37,11 @@ import {
   normalizeCinematicMotion,
   describeCinematicMotion,
   resolveAutoRoutedModel,
+  scoreAutoRouterModel,
+  PUBLIC_CHAT_MODEL_IDS,
+  EXTENDED_CATALOG_MODEL_IDS,
+  getSelectableChatModelIds,
+  validateModelCatalogPassword,
   evaluateSafeMathExpression,
   foldTurkishDiacritics,
   verifyAndRepairModelOutput,
@@ -435,8 +440,8 @@ test('videoEngine scene archetypes, default specs, and WAV score synthesis work 
   assert.equal(showcaseVideo?.videoUrl, '/api/videos/showcase-veo.mp4');
 });
 
-test('All 115 selectable AI models across 9 provider ecosystems (10 tabs), Nano Banana panoramic ratios, and High-Fidelity 4K 60fps video metrics work end-to-end', () => {
-  assert.equal(LUXO_MODEL_IDS.length, 115);
+test('All 122 selectable AI models across 9 provider ecosystems (10 tabs), Nano Banana panoramic ratios, and High-Fidelity 4K 60fps video metrics work end-to-end', () => {
+  assert.equal(LUXO_MODEL_IDS.length, 122);
   assert.equal(LUXO_MODEL_CATEGORIES.length, 10);
   assert.ok(LUXO_MODELS['gemini-4-hydrogen']);
   assert.ok(LUXO_MODELS['gemini-4-carbon']);
@@ -862,8 +867,8 @@ test('Linear & quadratic equation solver, multi-turn context inheritance, coder 
   }
 });
 
-test('All 115 models support precision tuning options and verifyAndRepairModelOutput auto-closes unclosed code fences', () => {
-  assert.equal(LUXO_MODEL_IDS.length, 115);
+test('All 122 models support precision tuning options and verifyAndRepairModelOutput auto-closes unclosed code fences', () => {
+  assert.equal(LUXO_MODEL_IDS.length, 122);
   assert.ok(LUXO_MODELS['gemini-4-hydrogen']);
 
   const hydrogenSys = buildSystemPrompt('gemini-4-hydrogen', {
@@ -894,4 +899,89 @@ test('All 115 models support precision tuning options and verifyAndRepairModelOu
   const fences = repaired.match(/```/g) || [];
   assert.equal(fences.length, 2);
   assert.ok(repaired.endsWith('```'));
+});
+
+test('Public open chat models include all 13 requested flagship AIs for guests while extended 109 models require catalog password in Settings', () => {
+  assert.equal(PUBLIC_CHAT_MODEL_IDS.length, 13);
+  assert.equal(EXTENDED_CATALOG_MODEL_IDS.length, 109);
+  assert.equal(
+    PUBLIC_CHAT_MODEL_IDS.length + EXTENDED_CATALOG_MODEL_IDS.length,
+    LUXO_MODEL_IDS.length
+  );
+
+  const guestUser = {
+    isGuest: true,
+    isUnlockedDev: false,
+    isUnlockedDevHelper: false,
+  };
+
+  for (const openId of [
+    'claude-5-2-fable',
+    'claude-5-5-opus',
+    'claude-5-5-haiku',
+    'claude-5-5-sonnet',
+    'gpt-astra',
+    'luxo-sol',
+    'luxo-luna',
+    'chatgpt-5-2-pro',
+    'chatgpt-5-omni',
+    'gemini-4-carbon',
+    'gemini-4-argon',
+    'gemini-4-neon',
+    'gemini-4-hydrogen',
+  ] as const) {
+    assert.ok(
+      PUBLIC_CHAT_MODEL_IDS.includes(openId),
+      `Open chat list must include ${openId}`
+    );
+    assert.deepEqual(canAccessModel(openId, guestUser), { allowed: true });
+    assert.equal(LUXO_MODELS[openId].isLocked, false);
+  }
+
+  assert.equal(LUXO_MODELS['gpt-astra']?.name, 'GPT-Astra');
+  assert.equal(LUXO_MODELS['claude-5-2-fable']?.name, 'Claude Fable 5.2');
+  assert.equal(LUXO_MODELS['claude-5-5-opus']?.name, 'Claude Opus 5.5');
+  assert.equal(LUXO_MODELS['claude-5-5-sonnet']?.name, 'Claude Sonnet 5.5');
+  assert.equal(LUXO_MODELS['claude-5-5-haiku']?.name, 'Claude Haiku 5.5');
+  assert.equal(LUXO_MODELS['luxo-sol']?.name, 'Sol');
+  assert.equal(LUXO_MODELS['luxo-luna']?.name, 'Luna');
+
+  const defaultList = getSelectableChatModelIds('gemini-4-carbon', false);
+  assert.equal(defaultList.length, 13);
+
+  const pinnedExtendedList = getSelectableChatModelIds('deepseek-r2', false);
+  assert.equal(pinnedExtendedList.length, 14);
+  assert.equal(pinnedExtendedList[0], 'deepseek-r2');
+
+  const unlockedAllList = getSelectableChatModelIds('gemini-4-carbon', true);
+  assert.equal(unlockedAllList.length, 122);
+
+  assert.equal(validateModelCatalogPassword('serpil123'), true);
+  assert.equal(validateModelCatalogPassword('serpilmurat123'), true);
+  assert.equal(validateModelCatalogPassword('yanlis-sifre'), false);
+  assert.equal(validateModelCatalogPassword(''), false);
+});
+
+test('scoreAutoRouterModel weighs user reasoningLevel & codeStrictness preferences before defaulting to Gemini 4', () => {
+  const fastDecision = scoreAutoRouterModel({
+    prompt: 'Merhaba, bugün üretkenliğimizi nasıl hızlandırabiliriz?',
+    reasoningLevel: 'fast',
+    codeStrictness: 'production',
+  });
+  assert.equal(fastDecision.targetModelId, 'gemini-4-neon');
+
+  const deepCodeDecision = scoreAutoRouterModel({
+    prompt: 'TypeScript API fonksiyonu ve güvenlik hatası analizi yaz',
+    reasoningLevel: 'deep',
+    codeStrictness: 'production',
+  });
+  assert.equal(deepCodeDecision.targetModelId, 'gemini-4-carbon');
+  assert.equal(deepCodeDecision.autoDeepReasoning, true);
+
+  const explainedDecision = scoreAutoRouterModel({
+    prompt: 'TypeScript tip güvenliği fonksiyon örneği',
+    reasoningLevel: 'fast',
+    codeStrictness: 'explained',
+  });
+  assert.equal(explainedDecision.targetModelId, 'gemini-4-hydrogen');
 });

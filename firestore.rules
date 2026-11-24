@@ -380,6 +380,11 @@ service cloud.firestore {
           'openai-o4-mini',
           'openai-o1-pro',
           'openai-codex-agent',
+          'gpt-astra',
+          'claude-5-2-fable',
+          'claude-5-5-opus',
+          'claude-5-5-sonnet',
+          'claude-5-5-haiku',
           'claude-4-6-opus',
           'claude-4-5-sonnet',
           'claude-4-opus',
@@ -457,6 +462,8 @@ service cloud.firestore {
           'luxo-ultra',
           'luxo-argon',
           'luxo-quantum-math',
+          'luxo-sol',
+          'luxo-luna',
           'luxo-dev-helper',
           'luxo-dev'
         ]
@@ -507,6 +514,44 @@ service cloud.firestore {
         && (!('deviceInfo' in data) || (data.deviceInfo is string && data.deviceInfo.size() <= 500))
         && (!('modelId' in data) || (data.modelId is string && data.modelId.size() <= 80))
         && (!('rating' in data) || (data.rating is int && data.rating >= 1 && data.rating <= 5))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidLangdockWorkspaceItem(data) {
+      return data.keys().hasAll([
+          'itemId',
+          'ownerId',
+          'itemType',
+          'title',
+          'category',
+          'modelId',
+          'content',
+          'isEnabled',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'itemId',
+          'ownerId',
+          'itemType',
+          'title',
+          'category',
+          'modelId',
+          'content',
+          'isEnabled',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.ownerId == request.auth.uid
+        && isValidId(data.ownerId)
+        && isValidId(data.itemId)
+        && data.itemType is string && data.itemType.size() <= 24 && data.itemType in ['assistant', 'prompt', 'knowledge', 'workflow', 'integration']
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
+        && data.category is string && data.category.size() >= 1 && data.category.size() <= 60
+        && data.modelId is string && data.modelId.size() >= 1 && data.modelId.size() <= 40
+        && data.content is string && data.content.size() <= 4000
+        && data.isEnabled is bool
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -755,6 +800,63 @@ service cloud.firestore {
         allow delete: if isVerifiedUser()
           && isValidId(userId)
           && isValidId(peerId)
+          && userId == request.auth.uid
+          && existing().ownerId == request.auth.uid
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+      }
+
+      // 5. User Langdock Workspace Items Subcollection (/users/{userId}/workspaceItems/{itemId})
+      match /workspaceItems/{itemId} {
+        allow get: if isSignedIn()
+          && isValidId(userId)
+          && isValidId(itemId)
+          && userId == request.auth.uid
+          && (resource == null || existing().ownerId == request.auth.uid)
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+
+        allow list: if isSignedIn()
+          && userId == request.auth.uid
+          && resource.data.ownerId == request.auth.uid;
+
+        allow create: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(itemId)
+          && userId == request.auth.uid
+          && isValidLangdockWorkspaceItem(incoming())
+          && incoming().itemId == itemId
+          && incoming().ownerId == userId
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+
+        allow update: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(itemId)
+          && userId == request.auth.uid
+          && isValidLangdockWorkspaceItem(incoming())
+          && existing().ownerId == request.auth.uid
+          && incoming().itemId == existing().itemId
+          && incoming().ownerId == existing().ownerId
+          && incoming().itemType == existing().itemType
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'title',
+            'category',
+            'modelId',
+            'content',
+            'isEnabled',
+            'updatedAt'
+          ])
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+
+        allow delete: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(itemId)
           && userId == request.auth.uid
           && existing().ownerId == request.auth.uid
           && exists(/databases/$(database)/documents/users/$(userId))

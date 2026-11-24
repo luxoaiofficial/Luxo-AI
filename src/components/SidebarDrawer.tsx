@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Bell,
   BookOpen,
@@ -9,6 +9,8 @@ import {
   Folder,
   Globe,
   Image as ImageIcon,
+  KeyRound,
+  Keyboard,
   Laptop,
   LayoutDashboard,
   LogOut,
@@ -34,11 +36,12 @@ import {
   ScheduledRoutine,
 } from '../types/luxo';
 import {
-  LUXO_MODEL_IDS,
   LUXO_MODELS,
+  PUBLIC_CHAT_MODEL_IDS,
   sanitizeLuxoBrand,
 } from '../utils/luxoLogic';
-import { LuxoLogo } from './LuxoLogo';
+import { searchSidebarChats } from '../utils/sidebarChatSearch';
+import { LuxoLogo, ModelBrandAvatar } from './LuxoLogo';
 
 interface SidebarDrawerProps {
   isOpen: boolean;
@@ -61,6 +64,7 @@ interface SidebarDrawerProps {
   onOpenProjects: () => void;
   onOpenStudio: () => void;
   onOpenSettings: (subModal?: string) => void;
+  onOpenKeyboardShortcuts?: () => void;
   onOpenFeedback?: () => void;
   unreadNotificationCount?: number;
   onOpenNotifications?: () => void;
@@ -96,6 +100,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   onOpenProjects,
   onOpenStudio,
   onOpenSettings,
+  onOpenKeyboardShortcuts,
   onOpenFeedback,
   unreadNotificationCount = 0,
   onOpenNotifications,
@@ -110,7 +115,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   onToggleTheme,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [showSearch, setShowSearch] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [showAllChats, setShowAllChats] = useState(false);
   const [showScheduledModal, setShowScheduledModal] = useState(false);
   const [showNewRoutineForm, setShowNewRoutineForm] = useState(false);
@@ -120,10 +125,13 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   const [newRoutineModel, setNewRoutineModel] =
     useState<LuxoModelId>('luxo-flash');
 
-  const filteredChats = chats.filter((c) =>
-    c.title.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-  const visibleChats = showAllChats ? filteredChats : filteredChats.slice(0, 8);
+  const isSearching = searchQuery.trim().length > 0;
+  const searchResults = searchSidebarChats(chats, searchQuery);
+  const totalMatchCount = isSearching
+    ? searchResults.reduce((acc, item) => acc + item.matchCount, 0)
+    : 0;
+  const visibleResults =
+    isSearching || showAllChats ? searchResults : searchResults.slice(0, 8);
 
   const handleCreateRoutine = (e: React.FormEvent) => {
     e.preventDefault();
@@ -195,12 +203,28 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               >
                 <Settings className="w-4 h-4" />
               </button>
+              {onOpenKeyboardShortcuts && (
+                <button
+                  type="button"
+                  data-testid="sidebar-shortcuts-btn"
+                  onClick={() => {
+                    onOpenKeyboardShortcuts();
+                    onClose();
+                  }}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
+                  aria-label="Klavye Kısayolları"
+                  title="Klavye Kısayolları (Ctrl+/)"
+                >
+                  <Keyboard className="w-4 h-4" />
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => setShowSearch(!showSearch)}
+                data-testid="sidebar-focus-search-btn"
+                onClick={() => searchInputRef.current?.focus()}
                 className="w-8 h-8 rounded-full flex items-center justify-center text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
-                aria-label="Arama"
-                title="Arama"
+                aria-label="Sohbet İçeriklerinde Ara"
+                title="Sohbet İçeriklerinde Ara"
               >
                 <Search className="w-4 h-4" />
               </button>
@@ -231,24 +255,136 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               <span>Yeni Sohbet Başlat</span>
             </div>
             <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-              {LUXO_MODEL_IDS.length} AI
+              {PUBLIC_CHAT_MODEL_IDS.length} AI
             </span>
           </button>
 
-          {showSearch && (
-            <div className="relative mb-2">
+          {/* Persistent Global Search Across Past Chat Threads & Messages */}
+          <div className="mb-2 space-y-1">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
+                ref={searchInputRef}
                 type="text"
+                data-testid="sidebar-chat-search-input"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Sohbetlerde ara..."
-                className="w-full pl-8 pr-3 py-2 bg-neutral-100 dark:bg-neutral-800 rounded-xl text-xs text-neutral-900 dark:text-white focus:outline-hidden"
+                placeholder="Geçmiş sohbet ve mesajlarda ara..."
+                aria-label="Geçmiş sohbet ve mesajlarda ara"
+                className="w-full pl-8 pr-8 py-2 bg-neutral-100 dark:bg-neutral-800/90 border border-neutral-200/70 dark:border-neutral-700/70 rounded-xl text-xs text-neutral-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-blue-500/40"
               />
-              <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-2.5" />
+              {isSearching && (
+                <button
+                  type="button"
+                  data-testid="sidebar-chat-search-clear"
+                  onClick={() => {
+                    setSearchQuery('');
+                    searchInputRef.current?.focus();
+                  }}
+                  aria-label="Aramayı temizle"
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-neutral-400 hover:text-neutral-700 dark:hover:text-white absolute right-1.5 top-1/2 -translate-y-1/2 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            {isSearching && (
+              <div
+                data-testid="sidebar-chat-search-summary"
+                className="flex items-center justify-between px-1 text-[10px] font-medium text-neutral-500 dark:text-neutral-400"
+              >
+                <span>
+                  {searchResults.length} sohbet · {totalMatchCount} eşleşme
+                </span>
+                <span>Başlık + tüm mesajlar</span>
+              </div>
+            )}
+          </div>
+
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2.5 min-h-0">
+          {isSearching && (
+            <div className="space-y-1" data-testid="sidebar-chat-list">
+              {visibleResults.map((result) => {
+                const { chat, matchedIn, matchCount, snippet } = result;
+                return (
+                  <div
+                    key={chat.id}
+                    data-testid={`sidebar-chat-item-${chat.id}`}
+                    onClick={() => {
+                      onSelectChat(chat.id);
+                      onClose();
+                    }}
+                    className={`group px-3 py-2.5 rounded-2xl text-sm font-normal transition cursor-pointer ${
+                      activeChatId === chat.id
+                        ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white font-medium'
+                        : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate pr-1 font-medium text-xs sm:text-sm">
+                        {sanitizeLuxoBrand(chat.title)}
+                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="px-1.5 py-0.5 rounded-md bg-blue-500/12 text-blue-600 dark:text-blue-400 text-[10px] font-bold tabular-nums">
+                          {matchCount}×
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteChat(chat.id);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 text-neutral-400 hover:text-red-500 transition cursor-pointer shrink-0"
+                          aria-label={`Sohbeti Sil: ${chat.title}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    {snippet && (
+                      <div
+                        data-testid={`sidebar-chat-snippet-${chat.id}`}
+                        className="mt-1 text-[11px] leading-snug text-neutral-500 dark:text-neutral-400 line-clamp-2"
+                      >
+                        <span className="font-semibold text-neutral-600 dark:text-neutral-300 mr-1">
+                          {snippet.role === 'user'
+                            ? 'Siz:'
+                            : matchedIn === 'message'
+                            ? 'Yanıt:'
+                            : 'İçerik:'}
+                        </span>
+                        <span>{snippet.before}</span>
+                        <mark className="bg-amber-200/80 dark:bg-amber-500/30 text-neutral-900 dark:text-amber-200 px-0.5 rounded-xs font-semibold">
+                          {snippet.match}
+                        </mark>
+                        <span>{snippet.after}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {chats.length > 0 && searchResults.length === 0 && (
+                <p
+                  data-testid="sidebar-chat-search-empty"
+                  className="text-xs text-neutral-500 dark:text-neutral-400 px-3 py-4 text-center"
+                >
+                  &ldquo;{searchQuery.trim()}&rdquo; ile eşleşen sohbet veya mesaj içeriği bulunamadı.
+                </p>
+              )}
             </div>
           )}
 
-          <nav className="space-y-0.5 pt-1">
+          {isSearching && (
+            <div className="border-t border-neutral-200 dark:border-neutral-800 pt-2">
+              <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+                Hızlı Menü
+              </p>
+            </div>
+          )}
+
+          <nav className="space-y-0.5">
             {onOpenDashboard && (
               <button
                 type="button"
@@ -257,9 +393,9 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                   onOpenDashboard();
                   onClose();
                 }}
-                className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-2xl text-sm font-semibold text-neutral-900 dark:text-white bg-neutral-100/75 dark:bg-neutral-800/75 hover:bg-neutral-200/80 dark:hover:bg-neutral-800 transition cursor-pointer text-left"
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-semibold text-neutral-900 dark:text-white bg-neutral-100/75 dark:bg-neutral-800/75 hover:bg-neutral-200/80 dark:hover:bg-neutral-800 transition cursor-pointer text-left"
               >
-                <LayoutDashboard className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0" />
+                <LayoutDashboard className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                 <span className="truncate">Kişisel Kontrol Paneli (Dashboard)</span>
               </button>
             )}
@@ -272,9 +408,9 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                   onOpenVoiceCommands();
                   onClose();
                 }}
-                className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
               >
-                <Mic className="w-5 h-5 text-emerald-500 shrink-0" />
+                <Mic className="w-4 h-4 text-emerald-500 shrink-0" />
                 <span className="truncate">Sesli Komut Modu</span>
               </button>
             )}
@@ -285,9 +421,9 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                 onOpenImages();
                 onClose();
               }}
-              className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
             >
-              <ImageIcon className="w-5 h-5 text-amber-500 shrink-0" />
+              <ImageIcon className="w-4 h-4 text-amber-500 shrink-0" />
               <span className="truncate">Nano Banana & Veo Stüdyo</span>
             </button>
 
@@ -297,9 +433,9 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                 onOpenEvolution();
                 onClose();
               }}
-              className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
             >
-              <Brain className="w-5 h-5 text-indigo-500 shrink-0" />
+              <Brain className="w-4 h-4 text-indigo-500 shrink-0" />
               <span className="truncate">Otonom Gelişim & AI Evrim</span>
             </button>
 
@@ -311,10 +447,10 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                   onOpenNotifications();
                   onClose();
                 }}
-                className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
               >
-                <div className="flex items-center gap-3.5 min-w-0">
-                  <Bell className="w-5 h-5 text-rose-500 shrink-0" />
+                <div className="flex items-center gap-3 min-w-0">
+                  <Bell className="w-4 h-4 text-rose-500 shrink-0" />
                   <span className="truncate">Bildirim Merkezi</span>
                 </div>
                 {unreadNotificationCount > 0 && (
@@ -332,9 +468,9 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                   onOpenSocial();
                   onClose();
                 }}
-                className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
               >
-                <Calendar className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0" />
+                <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                 <span className="truncate">Etkinlik Takvimi & Sosyal Ağ</span>
               </button>
             )}
@@ -346,9 +482,9 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                   onOpenContentStudio();
                   onClose();
                 }}
-                className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
               >
-                <SquarePen className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                <SquarePen className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
                 <span className="truncate">İçerik Stüdyosu (SEO & Blog)</span>
               </button>
             )}
@@ -360,9 +496,9 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                   onOpenHub();
                   onClose();
                 }}
-                className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
               >
-                <Globe className="w-5 h-5 text-sky-500 shrink-0" />
+                <Globe className="w-4 h-4 text-sky-500 shrink-0" />
                 <span className="truncate">Topluluk, SEO & Performans</span>
               </button>
             )}
@@ -375,10 +511,10 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                   onOpenGmail();
                   onClose();
                 }}
-                className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+                className="w-full flex items-center justify-between px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
               >
-                <div className="flex items-center gap-3.5 min-w-0">
-                  <Mail className="w-5 h-5 text-rose-500 shrink-0" />
+                <div className="flex items-center gap-3 min-w-0">
+                  <Mail className="w-4 h-4 text-rose-500 shrink-0" />
                   <span className="truncate">Gmail Çalışma Alanı</span>
                 </div>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400">
@@ -393,9 +529,9 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                 onOpenLibrary();
                 onClose();
               }}
-              className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
             >
-              <BookOpen className="w-5 h-5 text-neutral-600 dark:text-neutral-400 shrink-0" />
+              <BookOpen className="w-4 h-4 text-neutral-600 dark:text-neutral-400 shrink-0" />
               <span className="truncate">Kitaplık</span>
             </button>
 
@@ -405,9 +541,9 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                 onOpenProjects();
                 onClose();
               }}
-              className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
             >
-              <Folder className="w-5 h-5 text-neutral-600 dark:text-neutral-400 shrink-0" />
+              <Folder className="w-4 h-4 text-neutral-600 dark:text-neutral-400 shrink-0" />
               <span className="truncate">Projeler</span>
             </button>
 
@@ -418,10 +554,10 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                 onOpenStudio();
                 onClose();
               }}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left group"
+              className="w-full flex items-center justify-between px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left group"
             >
-              <div className="flex items-center gap-3.5 min-w-0">
-                <Laptop className="w-5 h-5 text-emerald-500 group-hover:scale-105 transition shrink-0" />
+              <div className="flex items-center gap-3 min-w-0">
+                <Laptop className="w-4 h-4 text-emerald-500 group-hover:scale-105 transition shrink-0" />
                 <span className="truncate">Argon Kod Stüdyosu</span>
               </div>
               <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold shrink-0 ml-1">
@@ -432,9 +568,9 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
             <button
               type="button"
               onClick={() => setShowScheduledModal(true)}
-              className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
             >
-              <Clock className="w-5 h-5 text-neutral-600 dark:text-neutral-400 shrink-0" />
+              <Clock className="w-4 h-4 text-neutral-600 dark:text-neutral-400 shrink-0" />
               <span className="truncate">Zamanlandı</span>
             </button>
 
@@ -444,9 +580,9 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                 onOpenSettings('plugins');
                 onClose();
               }}
-              className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
             >
-              <Settings className="w-5 h-5 text-neutral-600 dark:text-neutral-400 shrink-0" />
+              <Settings className="w-4 h-4 text-neutral-600 dark:text-neutral-400 shrink-0" />
               <span className="truncate">Eklentiler</span>
             </button>
 
@@ -458,10 +594,10 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                 onOpenSettings();
                 onClose();
               }}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl text-sm font-semibold text-neutral-900 dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+              className="w-full flex items-center justify-between px-3 py-2 rounded-2xl text-sm font-semibold text-neutral-900 dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
             >
-              <div className="flex items-center gap-3.5 min-w-0">
-                <Settings className="w-5 h-5 text-blue-500 shrink-0" />
+              <div className="flex items-center gap-3 min-w-0">
+                <Settings className="w-4 h-4 text-blue-500 shrink-0" />
                 <span className="truncate">Ayarlar & Profil</span>
               </div>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400">
@@ -481,10 +617,10 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                 }
                 onClose();
               }}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+              className="w-full flex items-center justify-between px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
             >
-              <div className="flex items-center gap-3.5 min-w-0">
-                <MessageSquarePlus className="w-5 h-5 text-rose-500 shrink-0" />
+              <div className="flex items-center gap-3 min-w-0">
+                <MessageSquarePlus className="w-4 h-4 text-rose-500 shrink-0" />
                 <span className="truncate">Geri Bildirim & Hata Bildir</span>
               </div>
               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400">
@@ -498,10 +634,10 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               target="_blank"
               rel="noopener noreferrer"
               data-testid="sidebar-nav-direct-link-btn"
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+              className="w-full flex items-center justify-between px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
             >
-              <div className="flex items-center gap-3.5 min-w-0">
-                <Globe className="w-5 h-5 text-emerald-500 shrink-0" />
+              <div className="flex items-center gap-3 min-w-0">
+                <Globe className="w-4 h-4 text-emerald-500 shrink-0" />
                 <span className="truncate">Doğrudan Canlı Siteye Gir</span>
               </div>
               <ExternalLink className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
@@ -512,13 +648,13 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                 type="button"
                 data-testid="sidebar-nav-theme-toggle"
                 onClick={onToggleTheme}
-                className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+                className="w-full flex items-center justify-between px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
               >
-                <div className="flex items-center gap-3.5 min-w-0">
+                <div className="flex items-center gap-3 min-w-0">
                   {isDarkTheme ? (
-                    <Sun className="w-5 h-5 text-amber-500 shrink-0" />
+                    <Sun className="w-4 h-4 text-amber-500 shrink-0" />
                   ) : (
-                    <Moon className="w-5 h-5 text-neutral-600 dark:text-neutral-400 shrink-0" />
+                    <Moon className="w-4 h-4 text-neutral-600 dark:text-neutral-400 shrink-0" />
                   )}
                   <span className="truncate">
                     {isDarkTheme ? 'Açık Temaya Geç' : 'Koyu Temaya Geç'}
@@ -530,56 +666,67 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               </button>
             )}
           </nav>
-        </div>
 
-        <div className="border-t border-neutral-200 dark:border-neutral-800 mx-4 my-1" />
-
-        <div className="flex-1 overflow-y-auto px-3 py-2">
-          <div className="space-y-1">
-            {visibleChats.map((chat) => (
-              <div
-                key={chat.id}
-                onClick={() => {
-                  onSelectChat(chat.id);
-                  onClose();
-                }}
-                className={`group flex items-center justify-between px-3 py-2.5 rounded-2xl text-sm font-normal transition cursor-pointer ${
-                  activeChatId === chat.id
-                    ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white font-medium'
-                    : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800/50'
-                }`}
-              >
-                <span className="truncate pr-2">
-                  {sanitizeLuxoBrand(chat.title)}
-                </span>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDeleteChat(chat.id);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 p-1 text-neutral-400 hover:text-red-500 transition cursor-pointer shrink-0"
-                  aria-label={`Sohbeti Sil: ${chat.title}`}
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+          {!isSearching && (
+            <>
+              <div className="border-t border-neutral-200 dark:border-neutral-800 mx-1 pt-2">
+                <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+                  Geçmiş Sohbetler
+                </p>
               </div>
-            ))}
-            {chats.length === 0 && (
-              <p className="text-xs text-neutral-400 px-3 py-4 text-center">
-                Henüz sohbet geçmişi yok.
-              </p>
-            )}
-            {chats.length > 8 && !showAllChats && (
-              <button
-                type="button"
-                onClick={() => setShowAllChats(true)}
-                className="w-full text-left px-3 py-2 text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium transition cursor-pointer"
-              >
-                Tümünü gör ({chats.length})...
-              </button>
-            )}
-          </div>
+              <div className="space-y-1" data-testid="sidebar-chat-list">
+                {visibleResults.map((result) => {
+                  const { chat } = result;
+                  return (
+                    <div
+                      key={chat.id}
+                      data-testid={`sidebar-chat-item-${chat.id}`}
+                      onClick={() => {
+                        onSelectChat(chat.id);
+                        onClose();
+                      }}
+                      className={`group px-3 py-2.5 rounded-2xl text-sm font-normal transition cursor-pointer ${
+                        activeChatId === chat.id
+                          ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white font-medium'
+                          : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800/50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate pr-1 font-medium text-xs sm:text-sm">
+                          {sanitizeLuxoBrand(chat.title)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteChat(chat.id);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 text-neutral-400 hover:text-red-500 transition cursor-pointer shrink-0"
+                          aria-label={`Sohbeti Sil: ${chat.title}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {chats.length === 0 && (
+                  <p className="text-xs text-neutral-400 px-3 py-4 text-center">
+                    Henüz sohbet geçmişi yok.
+                  </p>
+                )}
+                {searchResults.length > 8 && !showAllChats && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllChats(true)}
+                    className="w-full text-left px-3 py-2 text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium transition cursor-pointer"
+                  >
+                    Tümünü gör ({searchResults.length})...
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         <div className="p-3 pb-8 sm:pb-3 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between gap-1.5 shrink-0 bg-white dark:bg-[#18181b] z-20 shadow-lg">
@@ -728,12 +875,12 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                     className="p-3.5 bg-neutral-50 dark:bg-[#2d2f34] rounded-2xl border border-neutral-200/70 dark:border-neutral-700/70 flex items-center justify-between gap-3"
                   >
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <div
-                        className="w-8 h-8 rounded-xl flex items-center justify-center text-white shrink-0"
-                        style={{ backgroundColor: rModel.accentColor }}
-                      >
-                        <LuxoLogo className="w-4 h-4 text-white" size={16} />
-                      </div>
+                      <ModelBrandAvatar
+                        name={rModel.name}
+                        logoUrl={rModel.logoUrl}
+                        accentColor={rModel.accentColor}
+                        sizeClass="w-8 h-8 rounded-xl"
+                      />
                       <div className="min-w-0 flex-1">
                         <h4 className="text-xs font-bold text-neutral-900 dark:text-white truncate">
                           {routine.title}

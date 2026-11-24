@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <defs>
+    <linearGradient id="cinemaGrad" x1="5" y1="5" x2="27" y2="27" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ec4899"/>
+      <stop offset="100%" stop-color="#6366f1"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8" fill="#fdf2f8"/>
+  <rect x="5.5" y="7.5" width="21" height="17" rx="3.5" fill="url(#cinemaGrad)"/>
+  <polygon points="13.5,12 21,16 13.5,20" fill="#ffffff"/>
+</svg>

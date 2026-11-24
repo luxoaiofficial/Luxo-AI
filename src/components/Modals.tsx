@@ -3,8 +3,8 @@ import {
   Bug,
   Camera,
   Check,
-  CircleAlert,
-  CircleCheck,
+  AlertCircle,
+  CheckCircle2,
   Cpu,
   CreditCard,
   Download,
@@ -14,7 +14,7 @@ import {
   Key,
   Layout,
   Lightbulb,
-  LoaderCircle,
+  Loader2,
   Lock,
   Mail,
   MessageSquare,
@@ -252,21 +252,21 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
 
         {isPlanActive && (
           <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl flex items-center gap-2.5 text-xs text-emerald-700 dark:text-emerald-300">
-            <CircleCheck className="w-4 h-4 shrink-0" />
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>Bu plan hesabınızda aktif! Modeli menüden seçebilirsiniz.</span>
           </div>
         )}
 
         {errorMsg && (
           <div className="mb-4 p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 rounded-2xl flex items-center gap-2.5 text-xs text-red-700 dark:text-red-300">
-            <CircleAlert className="w-4 h-4 shrink-0" />
+            <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{errorMsg}</span>
           </div>
         )}
 
         {successMsg && (
           <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl flex items-center gap-2.5 text-xs text-emerald-700 dark:text-emerald-300">
-            <CircleCheck className="w-4 h-4 shrink-0" />
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>{successMsg}</span>
           </div>
         )}
@@ -592,14 +592,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {errorMsg && (
           <div className="mb-4 p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 rounded-2xl flex items-start gap-2.5 text-xs text-red-700 dark:text-red-300">
-            <CircleAlert className="w-4 h-4 shrink-0 mt-0.5" />
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
             <div className="flex-1 leading-relaxed">{errorMsg}</div>
           </div>
         )}
 
         {successMsg && (
           <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl flex items-start gap-2.5 text-xs text-emerald-700 dark:text-emerald-300">
-            <CircleCheck className="w-4 h-4 shrink-0 mt-0.5" />
+            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
             <div className="flex-1 leading-relaxed">{successMsg}</div>
           </div>
         )}
@@ -613,7 +613,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               className="w-full flex items-center justify-center gap-3 py-3.5 px-4 bg-black hover:bg-neutral-800 text-white dark:bg-white dark:text-black dark:hover:bg-neutral-200 font-semibold rounded-full text-sm transition cursor-pointer shadow-sm disabled:opacity-50"
             >
               {loading ? (
-                <LoaderCircle className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
                   <path
@@ -771,7 +771,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               disabled={loading}
               className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold rounded-full text-xs transition cursor-pointer shadow-sm flex items-center justify-center gap-2 mt-2"
             >
-              {loading && <LoaderCircle className="w-4 h-4 animate-spin" />}
+              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               <span>
                 {authMode === 'email-register'
                   ? 'Kayıt Ol ve Doğrula'
@@ -1041,7 +1041,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
             data-testid="feedback-submitted-state"
             className="py-10 flex flex-col items-center text-center"
           >
-            <CircleCheck className="w-14 h-14 text-emerald-500 mb-3" />
+            <CheckCircle2 className="w-14 h-14 text-emerald-500 mb-3" />
             <h4 className="text-lg font-semibold text-neutral-900 dark:text-white mb-1">
               Rapor Kaydedildi ve Model İyileştirme Hattına İşlendi!
             </h4>
@@ -1152,7 +1152,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({
                         ) : cat.id === 'auth_network' ? (
                           <Wifi className="w-3.5 h-3.5" />
                         ) : (
-                          <CircleAlert className="w-3.5 h-3.5" />
+                          <AlertCircle className="w-3.5 h-3.5" />
                         )}
                       </span>
                       <div className="min-w-0">
@@ -2393,7 +2393,7 @@ export const VoiceModal: React.FC<VoiceModalProps> = ({
               >
                 {isSynthesizingPodcast ? (
                   <>
-                    <LoaderCircle className="w-3.5 h-3.5 animate-spin" />
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     <span>Kaydediliyor...</span>
                   </>
                 ) : (

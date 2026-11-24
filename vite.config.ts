@@ -8,6 +8,7 @@ export default defineConfig(() => {
     base: process.env.VITE_BASE_PATH || '/',
     plugins: [react(), tailwindcss()],
     resolve: {
+      dedupe: ['react', 'react-dom'],
       alias: {
         '@': path.resolve(import.meta.dirname, '.'),
       },
@@ -18,10 +19,11 @@ export default defineConfig(() => {
         'react-dom',
         'react-dom/client',
         'lucide-react',
-        'motion',
+        'framer-motion',
         'firebase/app',
         'firebase/auth',
         'firebase/firestore',
+        'jspdf',
       ],
     },
     server: {
@@ -51,6 +53,12 @@ export default defineConfig(() => {
             }
             if (id.includes('/firebase/') || id.includes('/@firebase/')) {
               return 'vendor-firebase';
+            }
+            if (id.includes('/jspdf/') || id.includes('/html2canvas/') || id.includes('/canvg/')) {
+              return 'vendor-pdf';
+            }
+            if (id.includes('/d3') || id.includes('/recharts/')) {
+              return 'vendor-charts';
             }
             return undefined;
           },

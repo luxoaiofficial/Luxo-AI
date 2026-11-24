@@ -8,7 +8,7 @@ import {
   Gauge,
   Globe,
   Image as ImageIcon,
-  LoaderCircle,
+  Loader2,
   Maximize2,
   Mic,
   Pause,
@@ -22,7 +22,6 @@ import {
   Video,
   Volume2,
   VolumeX,
-  WandSparkles,
   X,
 } from 'lucide-react';
 import {
@@ -674,7 +673,7 @@ export const ImagesStudioView: React.FC<ImagesStudioViewProps> = ({
             : resolvedHiFi
             ? 'Google Veo 4K · 60fps MP4'
             : 'Google Veo · HD Sinema MP4'),
-        modelUsed: 'gemini-omni-1.1-flash',
+        modelUsed: data.modelUsed || 'gemini-omni-1.2-flash',
         resolution: (
           data.resolution || (resolvedHiFi ? '4K UHD' : targetResolution)
         ).toUpperCase(),
@@ -1741,7 +1740,7 @@ export const ImagesStudioView: React.FC<ImagesStudioViewProps> = ({
         {isGenerating && (
           <div className="max-w-4xl mx-auto px-4 py-2.5 rounded-2xl bg-indigo-500/10 dark:bg-indigo-950/40 border border-indigo-500/30 flex items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-2.5 text-indigo-800 dark:text-indigo-200 font-semibold">
-              <LoaderCircle className="w-4 h-4 text-indigo-500 animate-spin shrink-0" />
+              <Loader2 className="w-4 h-4 text-indigo-500 animate-spin shrink-0" />
               <span>
                 {generatingTarget === 'video'
                   ? 'Google Veo 3 & Nano Banana GPU motoru özel anahtar kareyi, optik kamera yörüngesini ve sesli MP4 akışını sentezliyor (~12-18 sn)...'
@@ -1822,7 +1821,7 @@ export const ImagesStudioView: React.FC<ImagesStudioViewProps> = ({
             className="px-2.5 py-1 rounded-full bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-700 dark:text-indigo-300 text-xs font-semibold flex items-center gap-1 transition cursor-pointer shrink-0 whitespace-nowrap"
             title="Sinematik İstem Güçlendirici"
           >
-            <WandSparkles className="w-3.5 h-3.5" />
+            <Sparkles className="w-3.5 h-3.5" />
             <span className="hidden md:inline">
               {isEnhancing ? 'Güçlendiriliyor...' : 'İstemi Güçlendir'}
             </span>
@@ -1853,7 +1852,7 @@ export const ImagesStudioView: React.FC<ImagesStudioViewProps> = ({
             >
               {generatingTarget === 'video' ? (
                 <>
-                  <LoaderCircle className="w-3.5 h-3.5 animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   <span>MP4 Üretiliyor...</span>
                 </>
               ) : (
@@ -1873,7 +1872,7 @@ export const ImagesStudioView: React.FC<ImagesStudioViewProps> = ({
             {(studioTab === 'video' && generatingTarget === 'video') ||
             (studioTab === 'image' && generatingTarget === 'image') ? (
               <>
-                <LoaderCircle className="w-3.5 h-3.5 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 <span>Üretiliyor...</span>
               </>
             ) : (

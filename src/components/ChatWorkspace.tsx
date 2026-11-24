@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   ArrowLeftRight,
   ArrowRight,
   Bell,
   Bookmark,
   Brain,
-  Calendar,
   Check,
   ChevronDown,
   ChevronRight,
@@ -14,11 +14,11 @@ import {
   Copy,
   Download,
   ExternalLink,
+  FileDown,
   Folder,
   Globe,
   Image as ImageIcon,
   Key,
-  LayoutDashboard,
   Lock,
   Mic,
   Moon,
@@ -35,10 +35,8 @@ import {
   ThumbsDown,
   ThumbsUp,
   Trophy,
-  Users,
   Video,
   Volume2,
-  WandSparkles,
   X,
 } from 'lucide-react';
 import {
@@ -56,20 +54,21 @@ import {
   calculateGuestRemainingMessages,
   canAccessModel,
   enhanceUserPrompt,
-   getVoiceOption,
+  EXTENDED_CATALOG_MODEL_IDS,
+  getSelectableChatModelIds,
+  getVoiceOption,
   GUEST_MESSAGE_LIMIT,
   LUXO_MODEL_CATEGORIES,
   LUXO_MODELS,
   LUXO_VOICES,
+  PUBLIC_CHAT_MODEL_IDS,
   sanitizeLuxoBrand,
   SYNTHESIS_MODES,
 } from '../utils/luxoLogic';
-import { LuxoLogo, MarkdownContent } from './LuxoLogo';
-import {
-  QuickSocialShareButtons,
-  SocialShareButton,
-} from './SocialShareBar';
+import { LuxoLogo, MarkdownContent, ModelBrandAvatar } from './LuxoLogo';
+import { QuickSocialShareButtons } from './SocialShareBar';
 import { ContentRatingAndComments } from './ContentRatingAndComments';
+import { ModelSelectorDropdown } from './ModelSelectorDropdown';
 
 interface ChatWorkspaceProps {
   currentChat: ChatThread | null;
@@ -148,6 +147,9 @@ interface ChatWorkspaceProps {
   onOpenCollabPanel?: () => void;
   onTypingActivity?: (isTyping: boolean) => void;
   cloudSyncVisible?: boolean;
+  onOpenExtendedCatalog?: () => void;
+  showExtendedCatalog?: boolean;
+  isCatalogUnlocked?: boolean;
   user: LuxoUser;
   isStreaming: boolean;
 }
@@ -209,6 +211,9 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
   onOpenCollabPanel,
   onTypingActivity,
   cloudSyncVisible = false,
+  onOpenExtendedCatalog,
+  showExtendedCatalog = false,
+  isCatalogUnlocked = false,
   user,
   isStreaming,
 }) => {
@@ -241,6 +246,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
   const [expandedThinking, setExpandedThinking] = useState<
     Record<string, boolean>
   >({});
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -248,12 +254,16 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
   const toolsPopoverRef = useRef<HTMLDivElement | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const currentModel = LUXO_MODELS[activeModelId] || LUXO_MODELS['gemini-4-argon'];
+  const currentModel = LUXO_MODELS[activeModelId] || LUXO_MODELS['gemini-4-carbon'];
   const messages = currentChat?.messages || [];
   const guestRemaining = calculateGuestRemainingMessages(user);
   const isGuestLimitReached = user.isGuest && guestRemaining <= 0;
-  const totalModelCount = Object.keys(LUXO_MODELS).length;
-  const accessibleModelIds = (Object.keys(LUXO_MODELS) as LuxoModelId[]).filter(
+  const selectableModelIds = getSelectableChatModelIds(
+    activeModelId,
+    showExtendedCatalog
+  );
+  const totalModelCount = selectableModelIds.length;
+  const accessibleModelIds = selectableModelIds.filter(
     (id) => canAccessModel(id, user).allowed
   );
   const anyComparisonInThread = messages.some(
@@ -525,6 +535,41 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
     showToast(`Sohbet metin dosyası (.${ext}) olarak indirildi.`);
   };
 
+  const handleExportPdf = async () => {
+    if (!currentChat || currentChat.messages.length === 0) {
+      showToast('PDF olarak dışa aktarılacak mesaj bulunmuyor.');
+      return;
+    }
+    if (isExportingPdf) return;
+    setIsExportingPdf(true);
+    try {
+      const { exportChatToPdf } = await import('../utils/chatPdfExporter');
+      const res = exportChatToPdf(currentChat, currentModel.name);
+      showToast(
+        `Sohbet formatlı PDF olarak indirildi (${res.pageCount} sayfa).`
+      );
+    } catch {
+      showToast('PDF oluşturulurken bir hata oluştu, lütfen tekrar deneyin.');
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
+  useEffect(() => {
+    const onExportPdfEvent = () => {
+      if (currentChat && currentChat.messages.length > 0) {
+        void handleExportPdf();
+      }
+    };
+    window.addEventListener('luxo-export-active-chat-pdf', onExportPdfEvent);
+    return () => {
+      window.removeEventListener(
+        'luxo-export-active-chat-pdf',
+        onExportPdfEvent
+      );
+    };
+  });
+
   return (
     <div className="flex flex-col h-full bg-white dark:bg-[#18181b] text-neutral-900 dark:text-neutral-100 select-none relative overflow-hidden">
       {toastMessage && (
@@ -533,40 +578,31 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
         </div>
       )}
 
-      <header className="flex items-center justify-between gap-1.5 sm:gap-3 px-2.5 sm:px-4 py-2 sm:py-3 bg-white dark:bg-[#18181b] z-20 shrink-0 border-b border-neutral-100 dark:border-neutral-800 min-w-0">
+      <header className="flex items-center justify-between gap-1.5 sm:gap-3 px-2.5 sm:px-5 py-2 sm:py-2.5 bg-white/95 dark:bg-[#18181b]/95 backdrop-blur-xs z-20 shrink-0 border-b border-neutral-100 dark:border-neutral-800/90 min-w-0">
         <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 sm:flex-initial">
           <button
             type="button"
             onClick={onOpenSidebar}
-            className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs flex flex-col items-center justify-center gap-1 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
+            className="w-11 h-11 sm:w-10 sm:h-10 rounded-xl bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700/80 shadow-xs flex flex-col items-center justify-center gap-1 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
             aria-label="Menüyü Aç"
           >
             <span className="w-4 h-0.5 bg-black dark:bg-white rounded-full" />
-            <span className="w-3.5 h-0.5 bg-black dark:bg-white rounded-full self-start ml-3" />
+            <span className="w-3.5 h-0.5 bg-black dark:bg-white rounded-full self-start ml-2.5 sm:ml-2" />
           </button>
 
-          <button
-            type="button"
-            onClick={() => setShowModelModal(true)}
-            aria-label={`Aktif Model: ${currentModel.name}. Model seçmek için tıklayın`}
-            data-testid="header-model-selector-btn"
-            className="min-h-[44px] sm:min-h-0 flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-1.5 rounded-full bg-[#e8f3ff] dark:bg-blue-950/60 hover:bg-[#d8ebff] dark:hover:bg-blue-900/60 text-[#0266ff] dark:text-blue-300 text-xs font-bold transition active:scale-95 cursor-pointer shadow-xs min-w-0 sm:shrink-0 max-w-[136px] sm:max-w-[250px]"
-          >
-            <span
-              className="w-5 h-5 rounded-full flex items-center justify-center text-white shrink-0"
-              style={{ backgroundColor: currentModel.accentColor }}
-            >
-              <LuxoLogo className="w-3.5 h-3.5 text-white" size={14} />
-            </span>
-            <span className="truncate">
-              {user.isUnlockedDev
-                ? `${currentModel.name} (Dev Plus)`
-                : user.isUnlockedDevHelper
-                ? `${currentModel.name} (Dev Go)`
-                : currentModel.name}
-            </span>
-            <ChevronDown className="w-3.5 h-3.5 shrink-0" />
-          </button>
+          <div className="min-w-0 flex-1 sm:flex-initial">
+            <ModelSelectorDropdown
+              activeModelId={activeModelId}
+              onSelectModel={onSelectModel}
+              user={user}
+              onOpenUpgradeModal={onOpenUpgradeModal}
+              onOpenExtendedCatalog={onOpenExtendedCatalog}
+              showExtendedCatalog={showExtendedCatalog}
+              isCatalogUnlocked={isCatalogUnlocked}
+              compact
+              testIdPrefix="top-model-selector"
+            />
+          </div>
 
           {activeProject && (
             <div className="hidden lg:flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-300 shrink-0">
@@ -594,154 +630,47 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
               onClick={onOpenCommandPalette}
               aria-label="Hızlı Model ve Komut Arama"
               title="Gelişmiş Arama (Ctrl+K)"
-              className="w-11 h-11 sm:w-auto sm:h-9 flex items-center justify-center gap-1.5 sm:px-2.5 sm:py-1.5 rounded-full sm:rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-[#202123] dark:hover:bg-neutral-800 border border-neutral-200/80 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 text-xs font-semibold transition active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
+              className="hidden sm:flex w-10 h-10 sm:w-auto sm:h-10 items-center justify-center gap-1.5 sm:px-2.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-[#202123] dark:hover:bg-neutral-800 border border-neutral-200/80 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 text-xs font-semibold transition active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
             >
               <Search className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
               <span className="hidden lg:inline font-mono text-[11px]">⌘K</span>
             </button>
           )}
-          {onToggleTheme && (
-            <button
-              type="button"
-              data-testid="header-theme-toggle-btn"
-              onClick={onToggleTheme}
-              aria-label={isDarkTheme ? 'Açık Temaya Geç' : 'Koyu Temaya Geç'}
-              title={isDarkTheme ? 'Açık Tema (Gündüz)' : 'Koyu Tema (Gece)'}
-              className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs flex items-center justify-center text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
-            >
-              {isDarkTheme ? (
-                <Sun className="w-4 h-4 text-amber-400" />
-              ) : (
-                <Moon className="w-4 h-4" />
-              )}
-            </button>
-          )}
-          {onOpenDashboard && (
-            <button
-              type="button"
-              data-testid="header-dashboard-btn"
-              onClick={onOpenDashboard}
-              aria-label="Kişisel Kontrol Paneli (Dashboard)"
-              title="Kişisel Kontrol Paneli, Sabitlenen Alanlar & Model Metrikleri"
-              className="hidden md:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-[#202123] dark:hover:bg-neutral-800 border border-neutral-200/80 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 text-xs font-bold transition active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <LayoutDashboard className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-              <span className="hidden lg:inline">Panel</span>
-            </button>
-          )}
-          {onOpenEvolutionView && (
-            <button
-              type="button"
-              data-testid="open-evolution-hub-btn"
-              onClick={onOpenEvolutionView}
-              aria-label="Otonom Gelişim ve Öz-Onarım Merkezi"
-              title="Kendi Kendini Geliştiren AI & Hata Onarım Merkezi"
-              className="hidden sm:flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/25 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <Brain className="w-3.5 h-3.5" />
-              <span className="hidden xl:inline">Otonom Gelişim</span>
-              <span className="font-mono text-[11px] tabular-nums">
-                v{evolutionGeneration}
-              </span>
-            </button>
-          )}
-          {onOpenSocialView && (
-            <button
-              type="button"
-              data-testid="open-social-workspace-btn"
-              onClick={onOpenSocialView}
-              aria-label="Etkinlik Takvimi, Duyurular, Özel Sohbet Odaları ve Kullanıcı Profilleri"
-              title="Etkinlik Takvimi, Duyurular, Özel Sohbet Odaları ve Kullanıcı Profilleri"
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-blue-600/10 hover:bg-blue-600/20 border border-blue-600/25 text-blue-700 dark:text-blue-300 text-xs font-bold transition active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <Calendar className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-              <span className="hidden 2xl:inline">Takvim &amp; Sosyal</span>
-            </button>
-          )}
-          {onOpenContentStudioView && (
-            <button
-              type="button"
-              data-testid="open-content-studio-btn"
-              onClick={onOpenContentStudioView}
-              aria-label="İçerik Stüdyosu – SEO Meta Açıklama, Blog Başlığı ve Doğrudan İçerik Girişi"
-              title="İçerik Stüdyosu (SEO Meta, Blog Başlığı & Doğrudan Yayın)"
-              className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-[#202123] dark:hover:bg-neutral-800 border border-neutral-200/80 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 text-xs font-bold transition active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <PenLine className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              <span className="hidden 2xl:inline">İçerik Stüdyosu</span>
-            </button>
-          )}
-          {onOpenHubView && (
-            <button
-              type="button"
-              data-testid="open-community-hub-btn"
-              onClick={onOpenHubView}
-              aria-label="Keşfet, SEO ve Performans Merkezi"
-              title="SEO Stratejisi, Performans Hesaplayıcı, Forum, Blog, Anket ve SSS"
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-[#202123] dark:hover:bg-neutral-800 border border-neutral-200/80 dark:border-neutral-700 text-neutral-800 dark:text-neutral-200 text-xs font-bold transition active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <Globe className="w-3.5 h-3.5 text-indigo-500" />
-              <span className="hidden 2xl:inline">Keşfet &amp; SEO</span>
-            </button>
-          )}
-          {onOpenCollabPanel && (
-            <button
-              type="button"
-              onClick={onOpenCollabPanel}
-              aria-label="Canlı Ortak Çalışma"
-              title={`Canlı Ortak Çalışma Odası: #${collabRoomId}`}
-              className="hidden md:flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 text-emerald-700 dark:text-emerald-300 text-xs font-bold transition active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
-            >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  isCollabConnected
-                    ? 'bg-emerald-500 animate-pulse'
-                    : 'bg-amber-500'
-                }`}
-              />
-              <Users className="w-3.5 h-3.5" />
-              <span className="hidden 2xl:inline">Canlı Ortak Çalışma</span>
-              <span className="font-mono text-[11px] tabular-nums">
-                ({Math.max(1, collabParticipantsCount)} Aktif)
-              </span>
-            </button>
-          )}
-          <div className="hidden sm:block shrink-0">
-            <SocialShareButton
-              payload={{
-                title: currentChat?.title || `Luxo AI · ${totalModelCount} Yapay Zeka Modeli`,
-                excerpt:
-                  [...messages]
-                    .reverse()
-                    .find((m) => m.role === 'assistant')?.content ||
-                  messages[messages.length - 1]?.content ||
-                  'Gemini 4, ChatGPT-5o, Claude 4.5, DeepSeek R2, Grok 4, Nano Banana 4K ve Google Veo 3 stüdyosu.',
-                contentType: 'chat',
-                badge: `${currentModel.name} · LUXO AI`,
-              }}
-              label="Link & Paylaş"
-              onShared={(plat) => showToast(`${plat} hazırlandı.`)}
-            />
-          </div>
           {messages.length > 0 && (
-            <button
-              type="button"
-              data-testid="export-chat-btn"
-              onClick={() => handleExportChat('txt')}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0 text-xs font-semibold"
-              aria-label="Export Chat"
-              title="Export Chat (.txt metin dosyası olarak indir)"
-            >
-              <Download className="w-3.5 h-3.5 text-blue-500" />
-              <span className="hidden sm:inline">Export Chat</span>
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                data-testid="export-chat-pdf-btn"
+                disabled={isExportingPdf}
+                onClick={() => void handleExportPdf()}
+                className="min-h-[38px] sm:min-h-[40px] flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white shadow-xs transition active:scale-95 cursor-pointer shrink-0 text-[11px] sm:text-xs font-semibold"
+                aria-label="Sohbeti PDF Olarak Dışa Aktar"
+                title="Formatlı PDF Belgesi Olarak İndir (.pdf · Ctrl+Shift+E)"
+              >
+                <FileDown className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  {isExportingPdf ? 'Hazır...' : 'PDF'}
+                </span>
+              </button>
+              <button
+                type="button"
+                data-testid="export-chat-btn"
+                onClick={() => handleExportChat('txt')}
+                className="hidden sm:flex min-h-[40px] items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0 text-xs font-semibold"
+                aria-label="Export Chat"
+                title="Export Chat (.txt metin dosyası olarak indir)"
+              >
+                <Download className="w-3.5 h-3.5 text-blue-500" />
+                <span className="hidden xl:inline">TXT</span>
+              </button>
+            </div>
           )}
           {onOpenNotifications && (
             <button
               type="button"
               data-testid="header-notifications-btn"
               onClick={onOpenNotifications}
-              className="relative w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs flex items-center justify-center text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
+              className="hidden sm:flex relative w-10 h-10 rounded-xl bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs items-center justify-center text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
               aria-label="Bildirim Merkezi"
               title="Bildirimler & Tercihler"
             >
@@ -756,10 +685,26 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
               )}
             </button>
           )}
+          {onToggleTheme && (
+            <button
+              type="button"
+              data-testid="header-theme-toggle-btn"
+              onClick={onToggleTheme}
+              aria-label={isDarkTheme ? 'Açık Temaya Geç' : 'Koyu Temaya Geç'}
+              title={isDarkTheme ? 'Açık Tema (Gündüz)' : 'Koyu Tema (Gece)'}
+              className="w-11 h-11 sm:w-10 sm:h-10 rounded-xl bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs flex items-center justify-center text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
+            >
+              {isDarkTheme ? (
+                <Sun className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Moon className="w-4 h-4" />
+              )}
+            </button>
+          )}
           <button
             type="button"
             onClick={onOpenNewChat}
-            className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs flex items-center justify-center text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
+            className="hidden sm:flex w-10 h-10 rounded-xl bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs items-center justify-center text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
             aria-label="Yeni Sohbet"
             title="Yeni Sohbet"
           >
@@ -789,12 +734,18 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
         </div>
       )}
 
-      <main className="flex-1 overflow-y-auto px-4 py-4 flex flex-col justify-between">
+      <main className="flex-1 overflow-y-auto px-3 sm:px-4 py-3 sm:py-4 flex flex-col justify-between">
         {messages.length === 0 ? (
-          <div className="flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full py-6">
-            <div className="text-center mb-8">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl mb-3 text-white shadow-sm" style={{ backgroundColor: currentModel.accentColor }}>
-                <LuxoLogo className="w-7 h-7 text-white" size={28} />
+          <div className="flex-1 flex flex-col justify-center sm:justify-end max-w-2xl mx-auto w-full pt-4 sm:pt-10 pb-3 sm:pb-5">
+            <div className="text-center mb-5 sm:mb-7">
+              <div className="flex justify-center mb-3">
+                <ModelBrandAvatar
+                  name={currentModel.name}
+                  logoUrl={currentModel.logoUrl}
+                  accentColor={currentModel.accentColor}
+                  sizeClass="w-12 h-12 rounded-2xl"
+                  imgClass="w-full h-full object-contain p-0.5"
+                />
               </div>
               <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-neutral-900 dark:text-white mb-2">
                 Bugün ne üzerinde çalışıyoruz?
@@ -810,75 +761,16 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                   onClick={() => setShowModelModal(true)}
                   className="font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
                 >
-                  {totalModelCount} Yapay Zeka Modeli
+                  {totalModelCount} Açık Model
                 </button>
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-              <button
-                type="button"
-                onClick={onOpenImagesView}
-                className="flex items-center gap-3.5 px-4 py-4 bg-white dark:bg-[#202123] rounded-2xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left group"
-              >
-                <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
-                  <Video className="w-5 h-5 group-hover:scale-105 transition" />
-                </div>
-                <div>
-                  <div className="text-sm font-semibold text-neutral-900 dark:text-white">
-                    Nano Banana 4K & Google Veo
-                  </div>
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                    4K fotogerçekçi görsel ve sinematik video üret
-                  </div>
-                </div>
-              </button>
-
-              {onOpenSocialView && (
-                <button
-                  type="button"
-                  onClick={onOpenSocialView}
-                  className="flex items-center gap-3.5 px-4 py-4 bg-white dark:bg-[#202123] rounded-2xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left group"
-                >
-                  <div className="w-9 h-9 rounded-xl bg-blue-600/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                    <Calendar className="w-5 h-5 group-hover:scale-105 transition" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold text-neutral-900 dark:text-white">
-                      Etkinlik Takvimi, Sohbet Odaları & Profiller
-                    </div>
-                    <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                      Duyuruları favorile, arkadaş ekle ve özel oda kur
-                    </div>
-                  </div>
-                </button>
-              )}
-
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
               <button
                 type="button"
                 onClick={() => {
-                  setCompareMode(true);
-                  showToast('Yan yana karşılaştırma modu etkinleştirildi.');
-                }}
-                className="flex items-center gap-3.5 px-4 py-4 bg-white dark:bg-[#202123] rounded-2xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left group"
-              >
-                <div className="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center shrink-0">
-                  <Columns2 className="w-5 h-5 group-hover:scale-105 transition" />
-                </div>
-                <div>
-                  <div className="text-sm font-semibold text-neutral-900 dark:text-white">
-                    Yan Yana Model Karşılaştır
-                  </div>
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                    ChatGPT-5o, Claude 4, DeepSeek R2 ve Gemini 4 eşzamanlı
-                  </div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  onSelectModel('gemini-4-argon');
+                  onSelectModel('gemini-4-hydrogen');
                   setSynthesisMode('uzman-mimari');
                   setInputText(
                     'Yüksek trafikli bir API servisi için en sade ve güvenilir hız sınırlama yöntemini kısaca açıkla.'
@@ -902,139 +794,90 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  onSelectModel('perplexity-sonar-pro');
-                  setSynthesisMode('akademik-kanit');
-                  setWebSearchEnabled(true);
-                  setInputText(
-                    '2026 yılı bulut bilişim ve yapay zeka donanım gelişmelerini kısaca özetle.'
-                  );
+                  setCompareMode(true);
+                  showToast('Yan yana karşılaştırma modu etkinleştirildi.');
                 }}
                 className="flex items-center gap-3.5 px-4 py-4 bg-white dark:bg-[#202123] rounded-2xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left group"
               >
-                <div className="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-500 flex items-center justify-center shrink-0">
-                  <Globe className="w-5 h-5 group-hover:scale-105 transition" />
+                <div className="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center shrink-0">
+                  <Columns2 className="w-5 h-5 group-hover:scale-105 transition" />
                 </div>
                 <div>
                   <div className="text-sm font-semibold text-neutral-900 dark:text-white">
-                    Canlı Web & Kanıt Özeti
+                    Yan Yana Model Karşılaştır
                   </div>
                   <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                    Doğrulanmış kaynaklarla kısa ve öz araştırma
+                    Claude 5.5, ChatGPT-5.2, GPT-Astra ve Gemini 4 eşzamanlı
                   </div>
                 </div>
               </button>
 
-              {onOpenContentStudioView && (
-                <button
-                  type="button"
-                  onClick={onOpenContentStudioView}
-                  className="flex items-center gap-3.5 px-4 py-4 bg-white dark:bg-[#202123] rounded-2xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left group"
-                >
-                  <div className="w-9 h-9 rounded-xl bg-indigo-600/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                    <PenLine className="w-5 h-5 group-hover:scale-105 transition" />
+              <button
+                type="button"
+                onClick={onOpenImagesView}
+                className="flex items-center gap-3.5 px-4 py-4 bg-white dark:bg-[#202123] rounded-2xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left group"
+              >
+                <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
+                  <Video className="w-5 h-5 group-hover:scale-105 transition" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-neutral-900 dark:text-white">
+                    Nano Banana 4K & Google Veo
                   </div>
-                  <div>
-                    <div className="text-sm font-semibold text-neutral-900 dark:text-white">
-                      İçerik Stüdyosu (SEO & Doğrudan Yayın)
-                    </div>
-                    <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                      SEO meta açıklaması, blog başlığı üret ve siteye yayınla
-                    </div>
+                  <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                    4K fotogerçekçi görsel ve sinematik video üret
                   </div>
-                </button>
-              )}
+                </div>
+              </button>
 
-              {onOpenHubView && (
+              {onOpenExtendedCatalog ? (
                 <button
                   type="button"
-                  data-testid="welcome-community-hub-card"
-                  onClick={onOpenHubView}
+                  data-testid="welcome-extended-models-card"
+                  onClick={onOpenExtendedCatalog}
                   className="flex items-center gap-3.5 px-4 py-4 bg-white dark:bg-[#202123] rounded-2xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left group"
                 >
-                  <div className="w-9 h-9 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
-                    <Users className="w-5 h-5 group-hover:scale-105 transition" />
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                    <Lock className="w-5 h-5 group-hover:scale-105 transition" />
                   </div>
                   <div>
                     <div className="text-sm font-semibold text-neutral-900 dark:text-white">
-                      Topluluk Forumu, Anketler & Quiz
+                      Diğer Modeller (Ayarlar · Şifreli)
                     </div>
                     <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                      Yeni anket aç, oy ver, teknik teste katıl ve forumda tartış
+                      {EXTENDED_CATALOG_MODEL_IDS.length} ek yapay zekayı Ayarlar&apos;dan seçin
                     </div>
                   </div>
                 </button>
-              )}
-
-              {onOpenCommandPalette && (
-                <button
-                  type="button"
-                  data-testid="welcome-search-card"
-                  onClick={onOpenCommandPalette}
-                  className="flex items-center gap-3.5 px-4 py-4 bg-white dark:bg-[#202123] rounded-2xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left group"
-                >
-                  <div className="w-9 h-9 rounded-xl bg-neutral-900/10 dark:bg-white/10 text-neutral-800 dark:text-neutral-200 flex items-center justify-center shrink-0">
-                    <Search className="w-5 h-5 group-hover:scale-105 transition" />
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold text-neutral-900 dark:text-white">
-                      Gelişmiş Arama ({totalModelCount} Model, Forum, CMS & GitHub)
+              ) : (
+                onOpenCommandPalette && (
+                  <button
+                    type="button"
+                    data-testid="welcome-search-card"
+                    onClick={onOpenCommandPalette}
+                    className="flex items-center gap-3.5 px-4 py-4 bg-white dark:bg-[#202123] rounded-2xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left group"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-neutral-900/10 dark:bg-white/10 text-neutral-800 dark:text-neutral-200 flex items-center justify-center shrink-0">
+                      <Search className="w-5 h-5 group-hover:scale-105 transition" />
                     </div>
-                    <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                      Modeller, makaleler, anketler ve GitHub ayarlarına tek dokunuş
+                    <div>
+                      <div className="text-sm font-semibold text-neutral-900 dark:text-white">
+                        Gelişmiş Arama ({totalModelCount} Model)
+                      </div>
+                      <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                        Modeller, makaleler, anketler ve tüm araçlara tek dokunuş
+                      </div>
                     </div>
-                  </div>
-                </button>
+                  </button>
+                )
               )}
             </div>
-
-            {(onOpenEvolutionView || adaptiveSuggestions.length > 0) && (
-              <div className="p-3.5 rounded-2xl bg-neutral-50 dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-800 space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs font-bold text-neutral-800 dark:text-neutral-200 tabular-nums">
-                    Otonom Öz-Gelişim Önerileri · Nesil v{evolutionGeneration}
-                  </div>
-                  {onOpenEvolutionView && (
-                    <button
-                      type="button"
-                      onClick={onOpenEvolutionView}
-                      className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
-                    >
-                      <span>Gelişim Merkezini Aç</span>
-                      <ArrowRight className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-
-                {adaptiveSuggestions.length > 0 && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {adaptiveSuggestions.slice(0, 2).map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          onSelectModel(item.recommendedModelId);
-                          setInputText(item.prompt);
-                        }}
-                        className="p-2.5 rounded-xl bg-white dark:bg-[#18181b] border border-neutral-200/70 dark:border-neutral-800 hover:border-indigo-400 dark:hover:border-indigo-500/60 transition text-left cursor-pointer"
-                      >
-                        <div className="text-xs font-semibold text-neutral-900 dark:text-white truncate">
-                          {item.title}
-                        </div>
-                        <div className="text-[11px] text-neutral-500 dark:text-neutral-400 truncate mt-0.5">
-                          {item.subtitle}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         ) : (
           <div
             className={`${
               anyComparisonInThread || compareMode ? 'max-w-5xl' : 'max-w-3xl'
-            } mx-auto w-full space-y-6 pb-6 transition-all`}
+            } mx-auto w-full space-y-5 mt-auto pt-3 sm:pt-6 pb-4 transition-all`}
           >
             {messages.map((message, mIndex) => {
               const isAssistant = message.role === 'assistant';
@@ -1050,8 +893,11 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
 
               if (hasComparison && message.comparisonResponses) {
                 return (
-                  <div
+                  <motion.div
                     key={message.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
                     data-testid="split-comparison-block"
                     className="flex flex-col items-start w-full space-y-2.5"
                   >
@@ -1126,17 +972,12 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                             <div>
                               <div className="flex items-center justify-between gap-2 pb-2.5 mb-3 border-b border-neutral-100 dark:border-neutral-800">
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <span
-                                    className="w-6 h-6 rounded-lg flex items-center justify-center text-white shrink-0 shadow-xs"
-                                    style={{
-                                      backgroundColor: compModel.accentColor,
-                                    }}
-                                  >
-                                    <LuxoLogo
-                                      className="w-3.5 h-3.5 text-white"
-                                      size={14}
-                                    />
-                                  </span>
+                                  <ModelBrandAvatar
+                                    name={compModel.name}
+                                    logoUrl={compModel.logoUrl}
+                                    accentColor={compModel.accentColor}
+                                    sizeClass="w-6 h-6 rounded-lg"
+                                  />
                                   <div className="min-w-0">
                                     <div className="text-xs font-bold text-neutral-900 dark:text-white truncate">
                                       {compModel.name}
@@ -1279,13 +1120,17 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                         );
                       })}
                     </div>
-                  </div>
+                  </motion.div>
                 );
               }
 
               return (
-                <div
+                <motion.div
                   key={message.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  data-testid={`chat-message-${message.role}`}
                   className={`flex flex-col ${
                     isAssistant ? 'items-start' : 'items-end'
                   }`}
@@ -1302,7 +1147,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                     </div>
                   )}
                   <div
-                    className={`max-w-[94%] sm:max-w-[86%] p-4 transition-all ${
+                    className={`max-w-[94%] sm:max-w-[86%] p-3.5 sm:p-4 transition-all ${
                       isAssistant
                         ? 'bg-transparent text-neutral-900 dark:text-neutral-100 w-full'
                         : 'bg-neutral-100 dark:bg-[#2d2f34] text-neutral-900 dark:text-white rounded-3xl rounded-br-md shadow-xs'
@@ -1310,20 +1155,17 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                   >
                     {isAssistant && (
                       <div className="flex items-center gap-2 mb-2.5 text-xs text-neutral-500 dark:text-neutral-400">
-                        <span
-                          className="w-5 h-5 rounded-md flex items-center justify-center text-white shrink-0 shadow-xs"
-                          style={{
-                            backgroundColor:
-                              msgModel?.accentColor || currentModel.accentColor,
-                          }}
-                        >
-                          <LuxoLogo className="w-3.5 h-3.5 text-white" size={14} />
-                        </span>
+                        <ModelBrandAvatar
+                          name={msgModel?.name || currentModel.name}
+                          logoUrl={msgModel?.logoUrl || currentModel.logoUrl}
+                          accentColor={msgModel?.accentColor || currentModel.accentColor}
+                          sizeClass="w-5 h-5 rounded-md"
+                        />
                         <span className="font-bold text-neutral-900 dark:text-white">
                           {msgModel?.name || currentModel.name}
                         </span>
                         <span aria-hidden="true">·</span>
-                        <span>{msgModel?.badge}</span>
+                        <span className="truncate">{msgModel?.badge}</span>
                       </div>
                     )}
 
@@ -1718,18 +1560,28 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                         </div>
                       )}
                   </div>
-                </div>
+                </motion.div>
               );
             })}
 
             {isStreaming && (
-              <div className="flex items-center gap-2 text-xs text-neutral-400 py-2">
-                <LuxoLogo className="w-4 h-4 text-blue-500 animate-spin" size={16} />
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.16 }}
+                className="flex items-center gap-2 text-xs text-neutral-400 py-2"
+              >
+                <ModelBrandAvatar
+                  name={currentModel.name}
+                  logoUrl={currentModel.logoUrl}
+                  accentColor={currentModel.accentColor}
+                  sizeClass="w-5 h-5 rounded-md animate-pulse"
+                />
                 <span className="font-semibold text-blue-600 dark:text-blue-400">
                   {currentModel.name}
                 </span>
                 <span>sentezliyor ve yanıtlıyor...</span>
-              </div>
+              </motion.div>
             )}
             <div ref={bottomRef} />
           </div>
@@ -2101,7 +1953,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                         disabled={!inputText.trim() || isEnhancingPrompt}
                         className="w-full px-3 py-2 rounded-xl text-xs font-semibold bg-indigo-500/10 hover:bg-indigo-500/20 disabled:opacity-45 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20 transition flex items-center justify-center gap-2 cursor-pointer"
                       >
-                        <WandSparkles className="w-3.5 h-3.5 shrink-0" />
+                        <Sparkles className="w-3.5 h-3.5 shrink-0" />
                         <span>
                           {isEnhancingPrompt
                             ? 'İstem Güçlendiriliyor...'
@@ -2436,10 +2288,10 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-neutral-900 dark:text-white leading-tight">
-                    Yapay Zeka Model Merkezi ({totalModelCount} Model)
+                    Açık Modeller ({totalModelCount} Güçlü AI)
                   </h3>
                   <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                    Gemini, ChatGPT & o3/o4, Claude, DeepSeek, Grok, Llama 4, Mistral, Qwen, Runway, Kling & Perplexity
+                    Claude 5.5 / Fable 5.2, GPT-Astra, ChatGPT-5.2, Sol, Luna &amp; Gemini 4 Serisi
                   </p>
                 </div>
               </div>
@@ -2460,7 +2312,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                   type="text"
                   value={modelSearchQuery}
                   onChange={(e) => setModelSearchQuery(e.target.value)}
-                  placeholder={`${totalModelCount} model içinde ara (Örn: GPT-4.5, Claude 4, DeepSeek R2, Runway Gen-4, Kling 2, Grok 3, Qwen 3)...`}
+                  placeholder="Açık modellerde ara (Örn: Claude 5.5, Fable, GPT-Astra, Gemini 4, Sol, Luna)..."
                   aria-label="Yapay zeka modeli ara"
                   className="w-full pl-9 pr-8 py-2 rounded-xl bg-neutral-100 dark:bg-[#18181b] border border-neutral-200 dark:border-neutral-800 text-xs text-neutral-900 dark:text-white placeholder:text-neutral-400 focus:outline-hidden focus:border-indigo-500"
                 />
@@ -2477,13 +2329,17 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
               </div>
 
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-                {LUXO_MODEL_CATEGORIES.map((cat) => {
+                {LUXO_MODEL_CATEGORIES.filter(
+                  (cat) =>
+                    cat === 'Tümü' ||
+                    selectableModelIds.some((id) => LUXO_MODELS[id]?.category === cat)
+                ).map((cat) => {
                   const activeCat = modelCategoryFilter === cat;
                   const count =
                     cat === 'Tümü'
-                      ? Object.keys(LUXO_MODELS).length
-                      : (Object.keys(LUXO_MODELS) as LuxoModelId[]).filter(
-                          (id) => LUXO_MODELS[id].category === cat
+                      ? selectableModelIds.length
+                      : selectableModelIds.filter(
+                          (id) => LUXO_MODELS[id]?.category === cat
                         ).length;
                   return (
                     <button
@@ -2504,7 +2360,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-4 overflow-y-auto pr-1 flex-1">
-              {(Object.keys(LUXO_MODELS) as LuxoModelId[])
+              {selectableModelIds
                 .filter((mId) => {
                   const m = LUXO_MODELS[mId];
                   if (
@@ -2556,10 +2412,13 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                       }`}
                     >
                       <div
-                        className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 text-white shadow-xs"
-                        style={{ backgroundColor: m.accentColor }}
+                        className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 overflow-hidden shadow-xs bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800"
                       >
-                        <LuxoLogo className="w-4 h-4 text-white" size={18} />
+                        {m.logoUrl ? (
+                          <img src={m.logoUrl} alt={m.name} className="w-5 h-5 object-contain" />
+                        ) : (
+                          <LuxoLogo className="w-4 h-4 text-white" size={18} />
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-1.5">
@@ -2601,23 +2460,42 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                 })}
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setShowModelModal(false);
-                onOpenUpgradeModal();
-              }}
-              className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-full text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer shrink-0"
-            >
-              <LuxoLogo className="w-4 h-4 text-white" size={16} />
-              <span>
-                {user.isUnlockedDev
-                  ? 'VIP Dev Plus & Go Aktif'
-                  : user.isUnlockedDevHelper
-                  ? "Go Aktif - Plus'a Yükselt"
-                  : 'Planı Yükselt'}
-              </span>
-            </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 shrink-0">
+              {onOpenExtendedCatalog && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowModelModal(false);
+                    onOpenExtendedCatalog();
+                  }}
+                  className="w-full py-2.5 px-4 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 font-semibold rounded-full text-xs sm:text-sm shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Lock className="w-3.5 h-3.5 text-amber-400 dark:text-amber-600" />
+                  <span>
+                    Diğer Modeller (Ayarlar · {EXTENDED_CATALOG_MODEL_IDS.length})
+                  </span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowModelModal(false);
+                  onOpenUpgradeModal();
+                }}
+                className={`w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-full text-xs sm:text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer ${
+                  onOpenExtendedCatalog ? '' : 'sm:col-span-2'
+                }`}
+              >
+                <LuxoLogo className="w-4 h-4 text-white" size={16} />
+                <span>
+                  {user.isUnlockedDev
+                    ? 'VIP Dev Plus & Go Aktif'
+                    : user.isUnlockedDevHelper
+                    ? "Go Aktif - Plus'a Yükselt"
+                    : 'Planı Yükselt'}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       )}

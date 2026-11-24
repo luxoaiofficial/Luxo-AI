@@ -23,7 +23,7 @@ import {
   Terminal,
   Trash2,
   Users,
-  WandSparkles,
+  Sparkles,
   X,
 } from 'lucide-react';
 import { CodeSnapshot, LuxoModelId } from '../types/luxo';
@@ -284,7 +284,10 @@ function render() {
   ul.innerHTML = '';
   items.forEach((it, idx) => {
     const li = document.createElement('li');
-    li.innerHTML = '<span class="' + (it.done ? 'done' : '') + '">' + it.text + '</span>';
+    const span = document.createElement('span');
+    if (it.done) span.className = 'done';
+    span.textContent = it.text;
+    li.appendChild(span);
     const btn = document.createElement('button');
     btn.textContent = it.done ? 'Geri Al' : 'Tamamla';
     btn.style.background = it.done ? '#475569' : '#10b981';
@@ -1438,7 +1441,7 @@ export const ArgonCodeStudio: React.FC<ArgonCodeStudioProps> = ({
             onSubmit={handleAiGenerateCode}
             className="p-3 bg-[#1c1c21] border-t border-neutral-800 flex flex-wrap sm:flex-nowrap items-center gap-2"
           >
-            <WandSparkles className="w-4 h-4 text-emerald-400 shrink-0 hidden sm:block" />
+            <Sparkles className="w-4 h-4 text-emerald-400 shrink-0 hidden sm:block" />
             <select
               value={codeModelId}
               onChange={(e) => setCodeModelId(e.target.value as LuxoModelId)}

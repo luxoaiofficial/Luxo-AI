@@ -16,11 +16,15 @@ import {
   Download,
   ExternalLink,
   GitBranch,
+  FilePlus2,
   Globe,
   Grid3x3,
   HardDrive,
   Info,
+  Keyboard,
   KeyRound,
+  Layers,
+  Lock,
   LogOut,
   Mail,
   MailCheck,
@@ -49,11 +53,19 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { LuxoPlugin, LuxoUser } from '../types/luxo';
+import { LuxoModelCategory, LuxoModelId, LuxoPlugin, LuxoUser } from '../types/luxo';
 import {
+  generateDefaultAnalyticsReport,
+  getDefaultCmsConfig,
+  getDefaultSpeedOptimization,
+} from '../utils/analyticsEngine';
+import {
+  EXTENDED_CATALOG_MODEL_IDS,
   LUXO_MODELS,
+  LUXO_MODEL_CATEGORIES,
   LUXO_MODEL_IDS,
   LUXO_VOICES,
+  PUBLIC_CHAT_MODEL_IDS,
   sanitizeLuxoBrand,
 } from '../utils/luxoLogic';
 import {
@@ -62,7 +74,7 @@ import {
   parseAndValidateGithubRepoUrl,
   PROJECT_GITHUB_PIPELINE,
 } from '../utils/githubInfo';
-import { LuxoLogo } from './LuxoLogo';
+import { LuxoLogo, ModelBrandAvatar } from './LuxoLogo';
 
 interface SettingsViewProps {
   onBack: () => void;
@@ -80,10 +92,18 @@ interface SettingsViewProps {
   unreadNotificationCount?: number;
   onOpenNotifications?: () => void;
   onOpenGmail?: () => void;
+  onOpenKeyboardShortcuts?: () => void;
   onResendVerification?: () => Promise<void>;
   onRefreshVerification?: () => Promise<boolean>;
   onPasswordResetRequest?: () => void;
   initialSubModal?: string | null;
+  isCatalogUnlocked?: boolean;
+  onUnlockModelCatalog?: (code: string) => boolean;
+  onLockModelCatalog?: () => void;
+  activeModelId?: LuxoModelId;
+  onSelectModelFromSettings?: (modelId: LuxoModelId) => void;
+  showExtendedModelsInChat?: boolean;
+  onToggleExtendedModelsInChat?: (show: boolean) => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -102,13 +122,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   unreadNotificationCount = 0,
   onOpenNotifications,
   onOpenGmail,
+  onOpenKeyboardShortcuts,
   onResendVerification,
   onRefreshVerification,
   onPasswordResetRequest,
   initialSubModal = null,
+  isCatalogUnlocked = false,
+  onUnlockModelCatalog,
+  onLockModelCatalog,
+  activeModelId,
+  onSelectModelFromSettings,
+  showExtendedModelsInChat = false,
+  onToggleExtendedModelsInChat,
 }) => {
   const [searchFilter, setSearchFilter] = useState('');
   const [subView, setSubView] = useState<string | null>(initialSubModal);
+  const [catalogPasswordInput, setCatalogPasswordInput] = useState('');
+  const [catalogPasswordError, setCatalogPasswordError] = useState<string | null>(
+    null
+  );
+  const [catalogSearchQuery, setCatalogSearchQuery] = useState('');
+  const [catalogCategory, setCatalogCategory] = useState<
+    LuxoModelCategory | 'Tümü'
+  >('Tümü');
   const [tone, setTone] = useState(user.customTone || 'Varsayılan');
   const [warmth, setWarmth] = useState(user.customWarmth || 'Varsayılan');
   const [enthusiasm, setEnthusiasm] = useState(
@@ -144,7 +180,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // AI Tuning state
   const [defaultModelId, setDefaultModelId] = useState<LuxoUser['defaultModelId']>(
-    user.defaultModelId || 'luxo-auto-router'
+    user.defaultModelId || 'gemini-4-carbon'
   );
   const [reasoningLevel, setReasoningLevel] = useState<'fast' | 'balanced' | 'deep'>(
     user.reasoningLevel || 'balanced'
@@ -398,7 +434,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setFormatting('Varsayılan');
     setEmojiLevel('Varsayılan');
     setCustomInstructions('');
-    setDefaultModelId('luxo-auto-router');
+    setDefaultModelId('gemini-4-carbon');
     setReasoningLevel('balanced');
     setTemperature(0.7);
     setShowThinkingSteps(true);
@@ -413,7 +449,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setWorkspaceName('Kişisel');
     onUpdateUser({
       theme: 'system',
-      defaultModelId: 'luxo-auto-router',
+      defaultModelId: 'gemini-4-carbon',
       reasoningLevel: 'balanced',
       temperature: 0.7,
       showThinkingSteps: true,
@@ -1169,7 +1205,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <button
             type="button"
             onClick={() => setSubView(null)}
-            className="w-10 h-10 rounded-full bg-white dark:bg-[#18181b] border border-neutral-200 dark:border-neutral-800 flex items-center justify-center shadow-xs hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
+            className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white dark:bg-[#18181b] border border-neutral-200 dark:border-neutral-800 flex items-center justify-center shadow-xs hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
             aria-label="Geri Dön"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -1180,7 +1216,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <button
             type="button"
             onClick={handleSaveAiTuning}
-            className="w-10 h-10 rounded-full bg-white dark:bg-[#18181b] border border-neutral-200 dark:border-neutral-800 flex items-center justify-center shadow-xs text-neutral-900 dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
+            className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white dark:bg-[#18181b] border border-neutral-200 dark:border-neutral-800 flex items-center justify-center shadow-xs text-neutral-900 dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
             aria-label="Kaydet"
           >
             <Check className="w-5 h-5" />
@@ -1199,31 +1235,40 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-              {[
-                { id: 'luxo-auto-router', name: 'Luxo Auto-Router (Önerilen)' },
-                { id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen (Yeni · Yüksek Doğruluk)' },
-                { id: 'gemini-4-argon', name: 'Gemini 4 Argon (Amiral Gemisi)' },
-                { id: 'gemini-3-8-flash', name: 'Gemini 3.8 Flash' },
-                { id: 'deepseek-r2', name: 'DeepSeek R2 Muhakeme' },
-                { id: 'chatgpt-5-2-pro', name: 'ChatGPT-5.2 Pro' },
-                { id: 'claude-4-6-opus', name: 'Claude 4.6 Opus' },
-                { id: 'qwen-3-max', name: 'Qwen 3 Max' },
-              ].map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  data-testid={`settings-default-model-${m.id}`}
-                  onClick={() => setDefaultModelId(m.id as LuxoUser['defaultModelId'])}
-                  className={`p-3 rounded-2xl text-left border transition cursor-pointer font-medium ${
-                    defaultModelId === m.id
-                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-bold'
-                      : 'border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-[#1f2024] text-neutral-700 dark:text-neutral-300'
-                  }`}
-                >
-                  {m.name}
-                </button>
-              ))}
+              {PUBLIC_CHAT_MODEL_IDS.map((mId) => {
+                const m = LUXO_MODELS[mId];
+                if (!m) return null;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    data-testid={`settings-default-model-${m.id}`}
+                    onClick={() => setDefaultModelId(m.id)}
+                    className={`p-3 rounded-2xl text-left border transition cursor-pointer font-medium flex items-center gap-2.5 ${
+                      defaultModelId === m.id
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-bold'
+                        : 'border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-[#1f2024] text-neutral-700 dark:text-neutral-300'
+                    }`}
+                  >
+                    <ModelBrandAvatar
+                      name={m.name}
+                      logoUrl={m.logoUrl}
+                      accentColor={m.accentColor}
+                      sizeClass="w-6 h-6 rounded-md"
+                    />
+                    <span className="truncate">{m.name}</span>
+                  </button>
+                );
+              })}
             </div>
+            <button
+              type="button"
+              onClick={() => setSubView('all_models')}
+              className="w-full py-2.5 px-3.5 rounded-2xl border border-dashed border-neutral-300 dark:border-neutral-700 text-xs font-semibold text-neutral-600 dark:text-neutral-300 hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 transition flex items-center justify-between cursor-pointer"
+            >
+              <span>Diğer {EXTENDED_CATALOG_MODEL_IDS.length} modeli gör (Şifreli Katalog)</span>
+              <Lock className="w-3.5 h-3.5" />
+            </button>
           </div>
 
           {/* Reasoning Level */}
@@ -1236,7 +1281,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 Yapay zekanın cevap üretmeden önceki düşünce derinliği
               </span>
             </div>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {[
                 { id: 'fast', label: 'Hızlı', desc: 'Düşük gecikme' },
                 { id: 'balanced', label: 'Dengeli', desc: 'Standart akıl yürütme' },
@@ -1295,7 +1340,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </span>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-2 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
               {(
                 [
                   { id: 'normal', label: 'Standart', desc: 'Okuması rahat' },
@@ -1424,7 +1469,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 Yanıt Yoğunluğu &amp; Kod Mühendisliği
               </span>
               <span className="text-xs text-neutral-500">
-                115 yapay zeka modelinin tamamı için çıktı biçimi ve otomatik kalite doğrulaması
+                {LUXO_MODEL_IDS.length} yapay zeka modelinin tamamı için çıktı biçimi ve otomatik kalite doğrulaması
               </span>
             </div>
 
@@ -1432,7 +1477,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 block">
                 Yanıt Uzunluğu &amp; Derinliği
               </span>
-              <div className="grid grid-cols-3 gap-2 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                 {(
                   [
                     { id: 'concise', label: 'Kısa & Öz', desc: 'Doğrudan sonuç' },
@@ -1462,7 +1507,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 block">
                 Kod Üretim Disiplini
               </span>
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                 {(
                   [
                     {
@@ -1529,6 +1574,266 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <Check className="w-4 h-4" />
             <span>Yapay Zeka &amp; Model Ayarlarını Kaydet</span>
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (subView === 'all_models') {
+    const normalizedQuery = catalogSearchQuery.trim().toLowerCase();
+    const filteredExtendedIds = EXTENDED_CATALOG_MODEL_IDS.filter((mId) => {
+      const m = LUXO_MODELS[mId];
+      if (!m) return false;
+      if (catalogCategory !== 'Tümü' && m.category !== catalogCategory) {
+        return false;
+      }
+      if (!normalizedQuery) return true;
+      return (
+        m.name.toLowerCase().includes(normalizedQuery) ||
+        m.tagline.toLowerCase().includes(normalizedQuery) ||
+        m.category.toLowerCase().includes(normalizedQuery) ||
+        m.description.toLowerCase().includes(normalizedQuery)
+      );
+    });
+
+    const handleCatalogUnlockSubmit = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!onUnlockModelCatalog) return;
+      const ok = onUnlockModelCatalog(catalogPasswordInput);
+      if (!ok) {
+        setCatalogPasswordError(
+          'Hatalı şifre. Lütfen yetkili katalog şifresini girin.'
+        );
+        return;
+      }
+      setCatalogPasswordError(null);
+      setCatalogPasswordInput('');
+      showToast('Genişletilmiş model kataloğunun kilidi açıldı.');
+    };
+
+    return (
+      <div className="flex flex-col h-full bg-[#f8f8f8] dark:bg-[#000000] text-neutral-900 dark:text-neutral-100 select-none relative overflow-hidden">
+        {toast && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-neutral-900 text-white text-xs font-semibold rounded-full shadow-lg">
+            {toast}
+          </div>
+        )}
+        <header className="flex items-center justify-between px-4 py-3 bg-white dark:bg-[#000000] border-b border-neutral-200/60 dark:border-neutral-900 shrink-0">
+          <button
+            type="button"
+            onClick={() => setSubView(null)}
+            className="w-11 h-11 sm:w-10 sm:h-10 rounded-full bg-white dark:bg-[#18181b] border border-neutral-200 dark:border-neutral-800 flex items-center justify-center shadow-xs hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
+            aria-label="Geri Dön"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="text-center">
+            <h2 className="text-base font-bold tracking-tight">
+              Diğer Modeller (Şifreli Katalog)
+            </h2>
+            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+              {EXTENDED_CATALOG_MODEL_IDS.length} ek yapay zeka modeli
+            </p>
+          </div>
+          {isCatalogUnlocked && onLockModelCatalog ? (
+            <button
+              type="button"
+              data-testid="extended-catalog-lock-btn"
+              onClick={() => {
+                onLockModelCatalog();
+                showToast('Model kataloğu kilitlendi.');
+              }}
+              className="px-3 py-1.5 rounded-full bg-neutral-100 dark:bg-[#18181b] border border-neutral-200 dark:border-neutral-800 text-[11px] font-semibold flex items-center gap-1 hover:bg-neutral-200 dark:hover:bg-neutral-800 cursor-pointer"
+              title="Kataloğu Kilitle"
+            >
+              <Lock className="w-3.5 h-3.5 text-amber-500" />
+              <span className="hidden sm:inline">Kilitle</span>
+            </button>
+          ) : (
+            <div className="w-10" />
+          )}
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-4 py-5 pb-24 max-w-2xl mx-auto w-full space-y-4">
+          {!isCatalogUnlocked ? (
+            <div
+              data-testid="extended-catalog-lock-card"
+              className="bg-white dark:bg-[#18181b] rounded-3xl border border-neutral-200/80 dark:border-neutral-800 p-6 shadow-xs space-y-4"
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 flex items-center justify-center shrink-0">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-neutral-900 dark:text-white">
+                    Şifreli Model Kataloğu
+                  </h3>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 leading-relaxed">
+                    En güçlü {PUBLIC_CHAT_MODEL_IDS.length} amiral gemisi model (Claude Fable 5.2, Opus/Sonnet/Haiku 5.5, GPT-Astra, ChatGPT-5.2 Pro, ChatGPT-5 Omni, Sol, Luna ve Gemini 4 serisi) sohbette herkese açıktır. Diğer {EXTENDED_CATALOG_MODEL_IDS.length} uzman modele erişmek için şifreyi girin.
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={handleCatalogUnlockSubmit} className="space-y-3">
+                <div className="relative">
+                  <KeyRound className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="password"
+                    data-testid="extended-catalog-password-input"
+                    value={catalogPasswordInput}
+                    onChange={(e) => {
+                      setCatalogPasswordInput(e.target.value);
+                      if (catalogPasswordError) setCatalogPasswordError(null);
+                    }}
+                    placeholder="Katalog şifresini girin..."
+                    aria-label="Katalog Şifresi"
+                    className="w-full pl-10 pr-4 py-3 rounded-2xl bg-neutral-50 dark:bg-[#111216] border border-neutral-200 dark:border-neutral-700 text-sm text-neutral-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-blue-500/30"
+                  />
+                </div>
+                {catalogPasswordError && (
+                  <p
+                    role="alert"
+                    data-testid="extended-catalog-password-error"
+                    className="text-xs font-semibold text-rose-600 dark:text-rose-400"
+                  >
+                    {catalogPasswordError}
+                  </p>
+                )}
+                <button
+                  type="submit"
+                  data-testid="extended-catalog-password-submit"
+                  className="w-full py-3 rounded-2xl bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 text-xs font-bold flex items-center justify-center gap-2 hover:opacity-90 transition cursor-pointer"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Kataloğun Kilidini Aç ({EXTENDED_CATALOG_MODEL_IDS.length} Model)</span>
+                </button>
+              </form>
+            </div>
+          ) : (
+            <div data-testid="extended-catalog-unlocked-panel" className="space-y-4">
+              <div className="bg-white dark:bg-[#18181b] rounded-3xl border border-neutral-200/80 dark:border-neutral-800 p-4 shadow-xs space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <span className="text-xs font-bold text-neutral-900 dark:text-white block">
+                      Sohbet Seçicisinde Tüm Modelleri Göster
+                    </span>
+                    <span className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                      Kapalıyken sohbette sade liste görünür; buradan seçtiğiniz model sohbete sabitlenir.
+                    </span>
+                  </div>
+                  {onToggleExtendedModelsInChat && (
+                    <button
+                      type="button"
+                      data-testid="extended-catalog-show-in-chat-toggle"
+                      onClick={() =>
+                        onToggleExtendedModelsInChat(!showExtendedModelsInChat)
+                      }
+                      className="cursor-pointer shrink-0"
+                      aria-label="Sohbet Seçicisinde Tüm Modelleri Göster"
+                    >
+                      {showExtendedModelsInChat ? (
+                        <ToggleRight className="w-7 h-7 text-blue-500" />
+                      ) : (
+                        <ToggleLeft className="w-7 h-7 text-neutral-400" />
+                      )}
+                    </button>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    data-testid="extended-catalog-search"
+                    value={catalogSearchQuery}
+                    onChange={(e) => setCatalogSearchQuery(e.target.value)}
+                    placeholder="Model, üretici veya yetenek ara (Örn: DeepSeek R2, Grok, Veo)..."
+                    aria-label="Katalogda Model Ara"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-neutral-100 dark:bg-neutral-800/80 text-xs text-neutral-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                  {LUXO_MODEL_CATEGORIES.map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setCatalogCategory(cat)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold whitespace-nowrap transition cursor-pointer ${
+                        catalogCategory === cat
+                          ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900'
+                          : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {filteredExtendedIds.map((mId) => {
+                  const m = LUXO_MODELS[mId];
+                  if (!m) return null;
+                  const isActive = activeModelId === mId;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      data-testid={`extended-model-card-${m.id}`}
+                      onClick={() => {
+                        setDefaultModelId(m.id);
+                        onSelectModelFromSettings?.(m.id);
+                        showToast(`${m.name} sohbet için seçildi.`);
+                      }}
+                      className={`p-3.5 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between gap-2 ${
+                        isActive
+                          ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-950/30 shadow-xs'
+                          : 'border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-[#18181b] hover:border-neutral-300 dark:hover:border-neutral-700'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex items-start gap-2.5">
+                          <ModelBrandAvatar
+                            name={m.name}
+                            logoUrl={m.logoUrl}
+                            accentColor={m.accentColor}
+                            sizeClass="w-8 h-8 rounded-lg mt-0.5"
+                          />
+                          <div className="min-w-0">
+                            <span className="text-xs font-bold text-neutral-900 dark:text-white truncate block">
+                              {m.name}
+                            </span>
+                            <span className="text-[10px] text-neutral-500 dark:text-neutral-400 block mt-0.5 truncate">
+                              {m.tagline} · {m.category}
+                            </span>
+                          </div>
+                        </div>
+                        {isActive ? (
+                          <span className="px-2 py-0.5 rounded-md bg-blue-600 text-white text-[10px] font-bold shrink-0">
+                            Aktif
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-md bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 text-[10px] font-semibold shrink-0">
+                            Seç
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-neutral-500 dark:text-neutral-400 line-clamp-2 leading-snug">
+                        {m.description}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {filteredExtendedIds.length === 0 && (
+                <div className="p-8 text-center text-xs text-neutral-500 dark:text-neutral-400 bg-white dark:bg-[#18181b] rounded-3xl border border-neutral-200 dark:border-neutral-800">
+                  Aramanızla eşleşen model bulunamadı.
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -2509,6 +2814,47 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             Uygulama
           </h3>
           <div className="bg-white dark:bg-[#18181b] rounded-3xl overflow-hidden border border-neutral-200/80 dark:border-neutral-800 divide-y divide-neutral-100 dark:divide-neutral-800/80 shadow-xs">
+            {(matchesSearch('Diğer Modeller') ||
+              matchesSearch('Katalog') ||
+              matchesSearch('Şifreli') ||
+              matchesSearch('AI Model')) && (
+              <button
+                type="button"
+                data-testid="settings-open-extended-models-btn"
+                onClick={() => setSubView('all_models')}
+                className="w-full min-h-[60px] flex items-center justify-between p-4 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition cursor-pointer text-left"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 flex items-center justify-center shrink-0">
+                    <Layers className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-sm font-semibold block truncate text-neutral-900 dark:text-white">
+                      Diğer Modeller (Şifreli Katalog)
+                    </span>
+                    <span className="text-[11px] text-neutral-500 dark:text-neutral-400 block truncate">
+                      {EXTENDED_CATALOG_MODEL_IDS.length} ek yapay zeka modelini görüntüle ve seç
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                      isCatalogUnlocked
+                        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-amber-500/12 text-amber-700 dark:text-amber-300'
+                    }`}
+                  >
+                    {!isCatalogUnlocked && <Lock className="w-3 h-3" />}
+                    <span>
+                      {isCatalogUnlocked ? 'Kilidi Açık' : 'Şifreli'}
+                    </span>
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-neutral-400" />
+                </div>
+              </button>
+            )}
+
             {matchesSearch('Renk teması') && (
               <div className="p-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3.5 min-w-0">
@@ -2562,6 +2908,38 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
                 </div>
               </div>
+            )}
+
+            {(matchesSearch('Klavye kısayolları') ||
+              matchesSearch('Kısayollar') ||
+              matchesSearch('Shortcuts') ||
+              matchesSearch('Tuşlar')) && (
+              <button
+                type="button"
+                data-testid="settings-nav-shortcuts-btn"
+                onClick={() => onOpenKeyboardShortcuts?.()}
+                className="w-full min-h-[56px] flex items-center justify-between p-4 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition cursor-pointer text-left"
+              >
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-blue-500/12 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                    <Keyboard className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-sm font-medium block truncate">
+                      Klavye Kısayolları
+                    </span>
+                    <span className="text-[11px] text-neutral-400 block truncate">
+                      Gezinme, PDF dışa aktarım ve hızlı komut tuşları
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="px-2 py-0.5 rounded-md bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-[10px] font-mono font-bold text-neutral-600 dark:text-neutral-300">
+                    Ctrl + /
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-neutral-400" />
+                </div>
+              </button>
             )}
 
             {matchesSearch('Ses') && (

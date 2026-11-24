@@ -378,6 +378,94 @@ export const LUXO_MODEL_CATEGORIES: ('Tümü' | LuxoModelCategory)[] = [
   'Luxo Özel',
 ];
 
+export function getModelBrandLogoUrl(id: string, name: string, category: string): string {
+  const lId = id.toLowerCase();
+  const lName = name.toLowerCase();
+  const lCat = category.toLowerCase();
+
+  if (lId === 'luxo-sol' || lId.endsWith('-sol')) {
+    return '/logos/sol.svg';
+  }
+  if (lId === 'luxo-luna' || lId.endsWith('-luna')) {
+    return '/logos/luna.svg';
+  }
+  if (lId.startsWith('luxo-')) {
+    return '/logos/luxo.svg';
+  }
+  if (
+    lId.includes('claude') ||
+    lId.includes('fable') ||
+    lId.includes('opus') ||
+    lId.includes('sonnet') ||
+    lId.includes('haiku')
+  ) {
+    return '/logos/claude.svg';
+  }
+  if (
+    lId.includes('gpt') ||
+    lId.includes('chatgpt') ||
+    lId.includes('openai') ||
+    lId.includes('astra') ||
+    lId.includes('sora')
+  ) {
+    return '/logos/openai.svg';
+  }
+  if (lId.includes('deepseek')) {
+    return '/logos/deepseek.svg';
+  }
+  if (lId.includes('grok')) {
+    return '/logos/grok.svg';
+  }
+  if (lId.includes('llama') || lName.includes('meta')) {
+    return '/logos/meta.svg';
+  }
+  if (
+    lId.includes('mistral') ||
+    lId.includes('codestral') ||
+    lId.includes('pixtral') ||
+    lId.includes('magistral')
+  ) {
+    return '/logos/mistral.svg';
+  }
+  if (lId.includes('qwen') || lId.includes('qwq')) {
+    return '/logos/qwen.svg';
+  }
+  if (lId.includes('perplexity')) {
+    return '/logos/perplexity.svg';
+  }
+  if (
+    lId.includes('gemini') ||
+    lId.includes('gemma') ||
+    lId.includes('antigravity') ||
+    lId.includes('deep-research') ||
+    lId.includes('imagen') ||
+    lId.includes('veo')
+  ) {
+    return '/logos/gemini.svg';
+  }
+  if (
+    lCat.includes('sinema') ||
+    lCat.includes('görsel') ||
+    lId.includes('nano-banana') ||
+    lId.includes('flux') ||
+    lId.includes('kling') ||
+    lId.includes('runway') ||
+    lId.includes('higgsfield') ||
+    lId.includes('wan') ||
+    lId.includes('seedance') ||
+    lId.includes('hailuo') ||
+    lId.includes('luma') ||
+    lId.includes('pika') ||
+    lId.includes('midjourney')
+  ) {
+    return '/logos/cinema.svg';
+  }
+  if (lCat.includes('küresel') || lId.includes('kimi') || lId.includes('cohere') || lId.includes('phi') || lId.includes('nova') || lId.includes('nemotron') || lId.includes('glm') || lId.includes('minimax') || lId.includes('yi-')) {
+    return '/logos/global.svg';
+  }
+  return '/logos/luxo.svg';
+}
+
 function createModelSpec(
   id: LuxoModelId,
   name: string,
@@ -421,6 +509,7 @@ function createModelSpec(
     contextWindow,
     capabilities,
     systemInstruction,
+    logoUrl: getModelBrandLogoUrl(id, name, category),
   };
 }
 
@@ -458,7 +547,7 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     'gemini-4-carbon',
     'Gemini 4 Carbon',
     'Google Gemini',
-    'gemini-4-argon',
+    'gemini-4-carbon',
     'GEMINI 4 · CARBON MİMAR',
     '#334155',
     'HIGH',
@@ -472,15 +561,15 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     'gemini-4-neon',
     'Gemini 4 Neon',
     'Google Gemini',
-    'gemini-3.8-flash',
+    'gemini-4-neon',
     'GEMINI 4 · NEON ULTRA HIZ',
     '#10b981',
-    'LOW',
+    'HIGH',
     '1M Token',
-    'Işık Hızında Gerçek Zamanlı Sentez, Çoklu Arayüz & Akıllı Otomasyon Motoru',
-    'Milisaniye düzeyinde tepki süresiyle akıcı sohbet, hızlı prototipleme, özetleme ve canlı etkileşimli iş akışları için tasarlanan Gemini 4 Neon.',
-    ['Neon Çekirdeği', 'Milisaniyelik Tepki', '1M Bağlam', 'Çevik Üretkenlik'],
-    'Google Gemini 4 Neon hızıyla yanıtla: Sorunun özüne anında in, okunması kolay kısa maddeler veya net cümlelerle hızlı ve pratik çözüm sun.'
+    'İleri STEM Muhakemesi, Kod Sentezi & Gerçek Zamanlı Üretim Motoru',
+    'Yüksek karmaşıklıktaki kodlama, matematiksel doğrulama ve çoklu arayüz otomasyonunu düşük gecikmeyle çözen Gemini 4 Neon çekirdeği.',
+    ['Neon Çekirdeği', 'İleri STEM & Kod', '1M Bağlam', 'Düşük Gecikme'],
+    'Google Gemini 4 Neon disipliniyle yanıtla: Sorunun kök nedenine hızla in, sayısal ve mantıksal adımları sessizce doğrulayıp okunabilir, keskin ve hatasız çıktı sun.'
   ),
   'gemini-4-ultra': createModelSpec(
     'gemini-4-ultra',
@@ -598,7 +687,7 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     'gemini-omni-flash',
     'Google Gemini Omni 1.1 Flash',
     'Google Gemini',
-    'gemini-omni-1.1-flash',
+    'gemini-omni-1.2-flash',
     'OMNI 1.1 · ÇOK MODLU',
     '#0891b2',
     'MEDIUM',
@@ -932,8 +1021,78 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     ['Otonom Hata Düzeltme', 'Birim Testi', 'Temiz Mimari'],
     'Kıdemli yazılım mühendisi titizliğiyle doğrudan çalışan, sade ve özlü teknik çözüm sun.'
   ),
+  'gpt-astra': createModelSpec(
+    'gpt-astra',
+    'GPT-Astra',
+    'OpenAI & ChatGPT',
+    'gemini-4-argon',
+    'GPT-ASTRA · KURUMSAL',
+    '#0ea5e9',
+    'HIGH',
+    '1M Token',
+    'Yüksek Kesinlikli Kurumsal Sentez, Çoklu Belge & Analitik Akış Motoru',
+    'Uzun raporlar, finansal analizler ve çok adımlı iş akışlarını yüksek tutarlılıkla çözen Astra çekirdeği.',
+    ['Astra Sentezi', 'Veri & Tablo Analizi', 'Canvas Desteği'],
+    'Kurumsal analitik kesinlikle konunun özüne in; yapısal, net ve yüksek güvenilirlikli Türkçe çözümler üret.'
+  ),
 
-  // ==================== 3. ANTHROPIC CLAUDE (9) ====================
+  // ==================== 3. ANTHROPIC CLAUDE (13) ====================
+  'claude-5-2-fable': createModelSpec(
+    'claude-5-2-fable',
+    'Claude Fable 5.2',
+    'Anthropic Claude',
+    'gemini-4-argon',
+    'CLAUDE 5.2 · FABLE',
+    '#ea580c',
+    'HIGH',
+    '2M Token',
+    'Üst Düzey Yaratıcı Mantık, Derin Strateji & Özgün İfade Motoru',
+    'Yaratıcı problem çözme, edebi derinlik, karmaşık sistem anlatımı ve dinamik senaryo kurgusunda öncü Claude Fable 5.2 amiral gemisi.',
+    ['Fable 5.2 Muhakemesi', '2M Bağlam', 'Stratejik Anlatım'],
+    'Claude Fable 5.2 inceliğiyle konunun özüne odaklan; yaratıcı, keskin ve yüksek kavrayışlı Türkçe çözümler sun.'
+  ),
+  'claude-5-5-opus': createModelSpec(
+    'claude-5-5-opus',
+    'Claude Opus 5.5',
+    'Anthropic Claude',
+    'gemini-4-argon',
+    'CLAUDE 5.5 · OPUS AMİRAL',
+    '#9a3412',
+    'HIGH',
+    '2M Token',
+    'En Üstün Sistem Mimarisi, Derin Muhakeme & Sıfır Hata Mühendisliği',
+    'Anthropic ekosisteminin en güçlü modeli; dev kod tabanları, kurumsal mimari ve bilimsel akıl yürütmede zirve.',
+    ['Opus 5.5 Çekirdeği', '2M Bağlam', 'Otonom Mühendislik'],
+    'Claude Opus 5.5 amiral gemisi disipliniyle en karmaşık problemleri berrak, net ve doğrudan çöz.'
+  ),
+  'claude-5-5-sonnet': createModelSpec(
+    'claude-5-5-sonnet',
+    'Claude Sonnet 5.5',
+    'Anthropic Claude',
+    'gemini-4-argon',
+    'CLAUDE 5.5 · SONNET',
+    '#c2410c',
+    'HIGH',
+    '1M Token',
+    'Hızlı Yazılım Geliştirme, Rafine UI/UX & Kusursuz Kod Mimarisi',
+    'Uçtan uca kod yazımı, temiz refactoring ve doğal insan etkileşiminde sektör standardı Claude Sonnet 5.5.',
+    ['Sonnet 5.5 Gücü', '1M Bağlam', 'Temiz Kod & UI'],
+    'Berrak, doğal ve mühendislik açısından kusursuz bir üslupla doğrudan sorunun özünü yanıtla.'
+  ),
+  'claude-5-5-haiku': createModelSpec(
+    'claude-5-5-haiku',
+    'Claude Haiku 5.5',
+    'Anthropic Claude',
+    'gemini-4-neon',
+    'CLAUDE 5.5 · HAIKU HIZ',
+    '#f97316',
+    'MEDIUM',
+    '500K Token',
+    'Milisaniyelik Çıkarım Hızı, Çevik Kodlama & Keskin Özet',
+    'Yüksek hızı güçlü zekayla birleştiren, anlık yanıt ve hızlı kod üretimi için optimize edilmiş Haiku 5.5.',
+    ['Haiku 5.5 Hızı', '500K Bağlam', 'Milisaniyelik Yanıt'],
+    'Haiku 5.5 çevikliğiyle tek bir kelimeyi israf etmeden anında, berrak ve net cevap ver.'
+  ),
   'claude-4-6-opus': createModelSpec(
     'claude-4-6-opus',
     'Claude 4.6 Opus Ultra',
@@ -1576,7 +1735,7 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     'veo-3-1-ultra-cinema',
     'Google Veo 3.1 Ultra (4K 60fps Video)',
     'Sinema & Görsel AI',
-    'gemini-omni-1.1-flash',
+    'gemini-omni-1.2-flash',
     'GOOGLE VEO 3.1 · 60FPS',
     '#4338ca',
     'HIGH',
@@ -1590,7 +1749,7 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     'veo-3-cinema-pro',
     'Google Veo 3 Cinema Director',
     'Sinema & Görsel AI',
-    'gemini-omni-1.1-flash',
+    'gemini-omni-1.2-flash',
     'GOOGLE VEO 3 · 4K SESLİ',
     '#4f46e5',
     'HIGH',
@@ -1604,7 +1763,7 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     'wan-2-2-cinema-ultra',
     'Alibaba Wan 2.2 Cinema Ultra',
     'Sinema & Görsel AI',
-    'gemini-omni-1.1-flash',
+    'gemini-omni-1.2-flash',
     'WAN 2.2 · 4K SİNEMA',
     '#7c3aed',
     'HIGH',
@@ -1618,7 +1777,7 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     'kling-2-5-turbo',
     'Kling 2.5 Turbo Master',
     'Sinema & Görsel AI',
-    'gemini-omni-1.1-flash',
+    'gemini-omni-1.2-flash',
     'KLING 2.5 · TURBO MP4',
     '#ea580c',
     'HIGH',
@@ -1632,7 +1791,7 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     'higgsfield-cinema',
     'Higgsfield Cinema & Reel AI',
     'Sinema & Görsel AI',
-    'gemini-omni-1.1-flash',
+    'gemini-omni-1.2-flash',
     'HIGGSFIELD · SİNEMA',
     '#e11d48',
     'HIGH',
@@ -1646,7 +1805,7 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     'higgsfield-dop-turbo',
     'Higgsfield DoP Turbo',
     'Sinema & Görsel AI',
-    'gemini-omni-1.1-flash',
+    'gemini-omni-1.2-flash',
     'HIGGSFIELD · DoP TURBO',
     '#be123c',
     'MEDIUM',
@@ -1660,7 +1819,7 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     'sora-veo-director',
     'Sora & Veo Cinema Director',
     'Sinema & Görsel AI',
-    'gemini-omni-1.1-flash',
+    'gemini-omni-1.2-flash',
     'SORA & VEO · 4K SİNEMA',
     '#9333ea',
     'HIGH',
@@ -1674,7 +1833,7 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     'runway-gen-4',
     'Runway Gen-4 Director',
     'Sinema & Görsel AI',
-    'gemini-omni-1.1-flash',
+    'gemini-omni-1.2-flash',
     'RUNWAY GEN-4 · FİLM',
     '#db2777',
     'HIGH',
@@ -1688,7 +1847,7 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     'kling-2-master',
     'Kling 2.0 Master Cinema',
     'Sinema & Görsel AI',
-    'gemini-omni-1.1-flash',
+    'gemini-omni-1.2-flash',
     'KLING 2.0 · MASTER',
     '#ea580c',
     'HIGH',
@@ -1702,7 +1861,7 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     'seedance-1-pro',
     'ByteDance Seedance 1.0 Pro',
     'Sinema & Görsel AI',
-    'gemini-omni-1.1-flash',
+    'gemini-omni-1.2-flash',
     'SEEDANCE 1.0 · ÇOKLU PLAN',
     '#0d9488',
     'HIGH',
@@ -1716,7 +1875,7 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     'hailuo-minimax-video',
     'MiniMax Hailuo 02 Director',
     'Sinema & Görsel AI',
-    'gemini-omni-1.1-flash',
+    'gemini-omni-1.2-flash',
     'HAILUO 02 · SİNEMATİK',
     '#7c3aed',
     'HIGH',
@@ -1730,7 +1889,7 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     'luma-ray-2',
     'Luma Ray 2 Dream Machine',
     'Sinema & Görsel AI',
-    'gemini-omni-1.1-flash',
+    'gemini-omni-1.2-flash',
     'LUMA RAY 2 · 3D IŞIK',
     '#0284c7',
     'MEDIUM',
@@ -2028,6 +2187,34 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
     ['Matematiksel Kanıt', 'Sayısal Doğrulama', 'Fizik & STEM'],
     'Matematik ve bilim sorularında birim ve sayısal sağlamayı kendi içinde yapıp sonucu sade, kısa ve kesin biçimde sun.'
   ),
+  'luxo-sol': createModelSpec(
+    'luxo-sol',
+    'Sol',
+    'Luxo Özel',
+    'gemini-4-neon',
+    'SOL · ULTRA HIZLI',
+    '#f59e0b',
+    'MEDIUM',
+    '1M Token',
+    'Gündüz Hızı, Canlı Web Sentezi & Dinamik Üretkenlik Motoru',
+    'Hızlı araştırma, kurumsal özetler, e-posta taslakları ve anlık problem çözümü için optimize edilmiş aydınlık Sol çekirdeği.',
+    ['Yüksek Hız', 'Canlı Web', 'Kurumsal Özet'],
+    'Sol çekirdeğinin çevik netliğiyle gereksiz uzatma yapmadan, akıcı ve doğrudan uygulanabilir Türkçe yanıt ver.'
+  ),
+  'luxo-luna': createModelSpec(
+    'luxo-luna',
+    'Luna',
+    'Luxo Özel',
+    'gemini-4-hydrogen',
+    'LUNA · DERİN ANALİZ',
+    '#6366f1',
+    'HIGH',
+    '2M Token',
+    'Derin Muhakeme, Güvenlik Denetimi & Mimari Tasarım Çekirdeği',
+    'Karmaşık kod tabanları, uyum politikaları ve kritik mühendislik kararlarını sakin ve berrak muhakeme ile çözen Luna çekirdeği.',
+    ['Derin Düşünme', 'Kod & Güvenlik', '2M Uzun Bağlam'],
+    'Luna muhakeme disipliniyle değişkenleri sessizce tartıp kristal netliğinde, yapısal ve kesin bir yanıt sun.'
+  ),
   'luxo-dev-helper': createModelSpec(
     'luxo-dev-helper',
     "Luxo-Dev's Helper",
@@ -2061,6 +2248,51 @@ export const LUXO_MODELS: Record<LuxoModelId, LuxoModelConfig> = {
 };
 
 export const LUXO_MODEL_IDS = Object.keys(LUXO_MODELS) as LuxoModelId[];
+
+export const PUBLIC_CHAT_MODEL_IDS: LuxoModelId[] = [
+  'gemini-4-carbon',
+  'gemini-4-argon',
+  'gemini-4-neon',
+  'gemini-4-hydrogen',
+  'gpt-astra',
+  'chatgpt-5-2-pro',
+  'chatgpt-5-omni',
+  'claude-5-2-fable',
+  'claude-5-5-opus',
+  'claude-5-5-sonnet',
+  'claude-5-5-haiku',
+  'luxo-sol',
+  'luxo-luna',
+];
+
+const PUBLIC_CHAT_MODEL_SET = new Set<LuxoModelId>(PUBLIC_CHAT_MODEL_IDS);
+
+export const EXTENDED_CATALOG_MODEL_IDS: LuxoModelId[] = LUXO_MODEL_IDS.filter(
+  (id) => !PUBLIC_CHAT_MODEL_SET.has(id)
+);
+
+export function getSelectableChatModelIds(
+  activeModelId?: LuxoModelId,
+  showExtendedCatalog = false
+): LuxoModelId[] {
+  if (showExtendedCatalog) {
+    return LUXO_MODEL_IDS;
+  }
+  if (
+    activeModelId &&
+    activeModelId in LUXO_MODELS &&
+    !PUBLIC_CHAT_MODEL_SET.has(activeModelId)
+  ) {
+    return [activeModelId, ...PUBLIC_CHAT_MODEL_IDS];
+  }
+  return PUBLIC_CHAT_MODEL_IDS;
+}
+
+export function validateModelCatalogPassword(code: string): boolean {
+  if (!code) return false;
+  const normalized = code.trim().toLowerCase();
+  return normalized === 'serpil123' || normalized === 'serpilmurat123';
+}
 
 export type UnlockResult = 'dev_full' | 'dev_helper' | 'invalid';
 
@@ -2785,7 +3017,7 @@ export function buildSystemPrompt(
     ECOSYSTEM_PRECISION_DIRECTIVES[model.category],
     persona.systemPersonaDirective,
     buildModelPrecisionSignature(modelId),
-    'TEMEL YANIT KALİTESİ VE MÜKEMMELLİK KURALLARI: (1) Yanıta ASLA "Merhaba, ben ...", "Tabii ki", "Elbette", "İşte ..." veya "... olarak yanıt veriyorum" gibi yapay dolgu girişleriyle başlama; ilk kelimeden itibaren doğrudan sorunun özüne ve çözümüne gir (yalnızca kullanıcı açıkça kim olduğunu sorarsa model adını söyle). (2) Kullanıcının isteminde klavye/yazım hatası veya örtük niyet varsa yüzüne vurmadan asıl kastedilen kavramı eksiksiz kavra ve derin, uygulanabilir çözüm sun; asla kalıp geçiştirme yanıtı verme. (3) Tüm yanıtları en yüksek doğruluk standardıyla yapılandır: kritik kavramları **kalın** vurgula, gerektiğinde temiz maddeler (- ) veya numaralı adımlar (1. ), sayısal sağlamalar ve eksiksiz kapanan çalışır kod blokları (```dil ... ```) kullan; süs sembolleri (✦, ⚡, ➤, §) kullanma. (4) Yanıtlamadan önce cevabını içsel olarak sına: mantık çelişkisi, eksik kapatılmış parantez/kod bloğu veya hatalı sayısal işlem bırakma. (5) Yanıtlarında kesinlikle "Argon Kod Stüdyosu", "Argon Stüdyo" veya "Kod Stüdyosu" ifadelerinden bahsetme.',
+    'TEMEL YANIT KALİTESİ VE MÜKEMMELLİK KURALLARI: (1) Yanıta ASLA "Merhaba, ben ...", "Tabii ki", "Elbette", "İşte ..." veya "... olarak yanıt veriyorum" gibi yapay dolgu girişleriyle başlama; ilk kelimeden itibaren doğrudan sorunun özüne ve çözümüne gir (yalnızca kullanıcı açıkça kim olduğunu sorarsa model adını söyle). (2) Çok turlu sohbetlerde önceki kullanıcı soruları ve kendi yanıtlarınla kurulan bağlamı kesintisiz koru; takip sorularında konuyu baştan özetlemek yerine kaldığın yerden derinleştir ve kullanıcı kararlarına sadık kal. (3) Kullanıcının isteminde klavye/yazım hatası veya örtük niyet varsa yüzüne vurmadan asıl kastedilen kavramı eksiksiz kavra; belirsizliği en mantıklı teknik varsayımla çözüp doğrudan uygulanabilir derin çözüm sun. (4) Tüm yanıtları en yüksek doğruluk standardıyla yapılandır: kritik kavramları **kalın** vurgula, gerektiğinde temiz maddeler (- ) veya numaralı adımlar (1. ), sayısal sağlamalar, zaman/bellek karmaşıklığı ve eksiksiz kapanan çalışır kod blokları (```dil ... ```) kullan; süs sembolleri (✦, ⚡, ➤, §) kullanma. (5) Yanıtlamadan önce cevabını sessizce sına: sınır/uç durumlar (null, boş girdi, eşzamanlılık), mantık çelişkisi, eksik kapatılmış parantez/kod bloğu, uydurma API/kütüphane adı veya hatalı sayısal işlem bırakma; bilmediğin veya doğrulanmamış bilgiyi uydurmak yerine açıkça belirt. (6) Yanıtlarında kesinlikle "Argon Kod Stüdyosu", "Argon Stüdyo" veya "Kod Stüdyosu" ifadelerinden bahsetme.',
     `Aktif Sentez Modu (${activeMode.label}): ${activeMode.directive}`,
     `Kimlik ve Gizlilik Kuralları: Seçili model "${model.name}". Kullanıcıya ait veya kurumsal hiçbir kişisel e-posta adresini yanıtlarında gösterme.`,
   ];
@@ -2921,10 +3153,221 @@ function pickBoostedCategoryModel(
   return bestId;
 }
 
+export interface AutoRouterScoreInput {
+  prompt: string;
+  reasoningLevel?: 'fast' | 'balanced' | 'deep';
+  codeStrictness?: 'production' | 'explained';
+  webSearch?: boolean;
+  hasAttachment?: boolean;
+  evolutionState?: SelfEvolutionState | null;
+}
+
+export interface AutoRouterScoredDecision extends AutoRouteDecision {
+  scoreBreakdown: {
+    modelId: LuxoModelId;
+    score: number;
+    reason: string;
+  }[];
+  reasoningLevelUsed: 'fast' | 'balanced' | 'deep';
+  codeStrictnessUsed: 'production' | 'explained';
+}
+
+export function scoreAutoRouterModel(
+  input: AutoRouterScoreInput
+): AutoRouterScoredDecision {
+  const clean = (input.prompt || '').trim();
+  const lower = clean.toLowerCase();
+  const folded = foldTurkishDiacritics(clean);
+  const reasoningLevelUsed: 'fast' | 'balanced' | 'deep' =
+    input.reasoningLevel === 'fast' || input.reasoningLevel === 'deep'
+      ? input.reasoningLevel
+      : 'balanced';
+  const codeStrictnessUsed: 'production' | 'explained' =
+    input.codeStrictness === 'explained' ? 'explained' : 'production';
+
+  // Hard deterministic media gates stay top-priority
+  if (isDirectImageCreationRequest(clean)) {
+    const picked = pickBoostedCategoryModel(
+      'nano-banana-2-1-ultra',
+      input.evolutionState
+    );
+    return {
+      targetModelId: picked,
+      domainLabel: 'Nano Banana 4K Fotoğraf Sentezi',
+      autoWebSearch: false,
+      autoDeepReasoning: false,
+      scoreBreakdown: [{ modelId: picked, score: 100, reason: 'Doğrudan 4K görsel sentezi' }],
+      reasoningLevelUsed,
+      codeStrictnessUsed,
+    };
+  }
+
+  if (
+    isVideoIntentPrompt(clean) ||
+    /\b(sahne|kamera|lens|storyboard|sinematik|film|isiklandirma|gorsel istem|render)\b/i.test(
+      folded
+    )
+  ) {
+    const picked = pickBoostedCategoryModel('veo-3-cinema-pro', input.evolutionState);
+    return {
+      targetModelId: picked,
+      domainLabel: 'Sinema & Görsel Yönetmenlik',
+      autoWebSearch: false,
+      autoDeepReasoning: false,
+      scoreBreakdown: [{ modelId: picked, score: 100, reason: 'Video ve sahne yönlendirme niyeti' }],
+      reasoningLevelUsed,
+      codeStrictnessUsed,
+    };
+  }
+
+  const isMath =
+    /(?:\d+\s*[+\-*/^%]\s*\d+)|(?:-?\d*\s*x\s*(?:\^\s*2|²|[+\-]\s*\d+)\s*=)|(?:\b(?:denklem\w*|kok\w*|integral\w*|turev\w*|olasilik\w*|yuzde\w*|karekok\w*|faktoriyel\w*|ebob\w*|ekok\w*|kombinasyon\w*|permutasyon\w*|ortalama\w*|logaritma\w*|matris\w*|istatistik\w*|hesapla\w*|kac eder|kactir)\b)/i.test(
+      folded
+    );
+  const isSql = /\b(sql|postgresql|mysql|sqlite|veritabani|indeks|sorgu)\b/i.test(folded);
+  const isSecurityOrArch =
+    /\b(guvenlik|zafiyet|owasp|audit|denetim|mimari tasarim|sistem tasarimi|mikroservis|dagitik|deadlock|kok neden)\b/i.test(
+      folded
+    );
+  const isCode =
+    /\b(kod|kodu|fonksiyon|script|class|sinif|typescript|javascript|python|react|node|rust|golang|html|css|api|algoritma|hata ayikla|bug|refactor|docker|kubernetes|git)\b/i.test(
+      folded
+    );
+  const isWeb =
+    Boolean(input.webSearch) ||
+    /\b(guncel|haber|bugun(?:ku|ki)?\s+(?:haber|kur|fiyat|hava|mac)|2025|2026|fiyat|kur|hava durumu|son gelisme|arastir|kaynak)\b/i.test(
+      folded
+    ) ||
+    /https?:\/\/\S+/i.test(clean);
+  const isEditorial =
+    /\b(cevir|ingilizce|almanca|fransizca|ispanyolca|hikaye|siir|metin yaz|slogan|e-posta|mail|ozetle|duzelt)\b/i.test(
+      folded
+    );
+
+  // Lightweight scoring matrix considering user reasoningLevel & codeStrictness BEFORE defaulting to Gemini 4
+  const scores: Partial<Record<LuxoModelId, { score: number; reason: string }>> = {
+    'gemini-4-argon': { score: 42, reason: 'Varsayılan Gemini 4 Argon amiral gemisi' },
+    'gemini-4-hydrogen': { score: 40, reason: 'Yüksek doğruluklu Gemini 4 Hydrogen' },
+    'gemini-4-carbon': { score: 38, reason: 'Kurumsal kod ve güvenlik Gemini 4 Carbon' },
+    'gemini-4-neon': { score: 36, reason: 'Ultra hızlı Gemini 4 Neon' },
+    'claude-4-5-sonnet': { score: 32, reason: 'Temiz yazılım mimarisi ve Türkçe üslup' },
+    'deepseek-math-v2': { score: 25, reason: 'Sayısal ve cebirsel matematik motoru' },
+    'qwen-3-coder-plus': { score: 24, reason: 'SQL ve veritabanı optimizasyonu' },
+    'perplexity-sonar-pro': { score: 24, reason: 'Canlı web ve kaynak arama' },
+    'gpt-4-5-orion': { score: 24, reason: 'Dil, çeviri ve editoryal akış' },
+  };
+
+  const bump = (id: LuxoModelId, delta: number, reason?: string) => {
+    const prev = scores[id] || { score: 0, reason: 'Aday model' };
+    scores[id] = { score: prev.score + delta, reason: reason || prev.reason };
+  };
+
+  // User preference weights (applied before falling back to Gemini 4 default)
+  if (reasoningLevelUsed === 'fast') {
+    bump('gemini-4-neon', 24, 'Hızlı akıl yürütme tercihi (fast)');
+    bump('gemini-4-hydrogen', 18, 'Düşük gecikmeli sentez (fast)');
+    bump('gemini-4-argon', -4);
+  } else if (reasoningLevelUsed === 'deep') {
+    bump('gemini-4-carbon', 20, 'Derin muhakeme tercihi (deep)');
+    bump('gemini-4-argon', 14, 'Derin bağlam ve muhakeme (deep)');
+    bump('claude-4-5-sonnet', 14, 'Çok adımlı derin analiz (deep)');
+  } else {
+    bump('gemini-4-hydrogen', 10, 'Dengeli hız/doğruluk tercihi');
+  }
+
+  if (isCode || isSecurityOrArch || isSql) {
+    if (codeStrictnessUsed === 'production') {
+      bump('gemini-4-carbon', 22, 'Üretime hazır katı kod standardı (production)');
+      bump('claude-4-5-sonnet', 20, 'Üretime hazır modüler kod (production)');
+      if (isSql) bump('qwen-3-coder-plus', 30, 'SQL / veritabanı uzmanı + production');
+    } else {
+      bump('gemini-4-hydrogen', 24, 'Öğretici açıklamalı kod tercihi (explained)');
+      bump('gpt-4-5-orion', 18, 'Açıklayıcı adım adım anlatım (explained)');
+    }
+  }
+
+  if (isMath) bump('deepseek-math-v2', 48, 'Matematiksel denklem ve sayısal hesaplama');
+  if (isSql) bump('qwen-3-coder-plus', 40, 'SQL ve indeks sorgu tasarımı');
+  if (isSecurityOrArch) bump('gemini-4-carbon', 32, 'Güvenlik denetimi ve sistem mimarisi');
+  if (isCode && !isSecurityOrArch && !isSql) bump('claude-4-5-sonnet', 28, 'Yazılım mühendisliği ve temiz kod');
+  if (isWeb) bump('perplexity-sonar-pro', 45, 'Canlı web araştırması ve güncel veri');
+  if (isEditorial && !isCode) bump('gpt-4-5-orion', 34, 'Editoryal dil ve çeviri');
+  if (input.hasAttachment) bump('gemini-4-argon', 18, 'Çok modlu dosya & uzun bağlam analizi');
+
+  if (input.evolutionState?.modelBoosts) {
+    for (const [mId, boost] of Object.entries(input.evolutionState.modelBoosts)) {
+      if (mId in scores && boost?.accuracyDelta) {
+        bump(mId as LuxoModelId, Math.round(boost.accuracyDelta * 4));
+      }
+    }
+  }
+
+  const ranked = (Object.entries(scores) as [LuxoModelId, { score: number; reason: string }][])
+    .sort((a, b) => b[1].score - a[1].score);
+  const top = ranked[0]?.[0] || 'gemini-4-argon';
+  const targetModelId = pickBoostedCategoryModel(top, input.evolutionState);
+
+  const domainMap: Partial<Record<LuxoModelId, string>> = {
+    'deepseek-math-v2': 'Matematik & Sayısal Doğrulama',
+    'qwen-3-coder-plus': 'Veritabanı & SQL Optimizasyonu',
+    'gemini-4-carbon': 'Sistem Mimarisi, Güvenlik & Katı Kodlama',
+    'claude-4-5-sonnet': 'Yazılım Mühendisliği & Temiz Mimari',
+    'perplexity-sonar-pro': 'Canlı Web & Kaynak Doğrulama',
+    'gpt-4-5-orion': 'Dil, Çeviri & Açıklamalı Sentez',
+    'gemini-4-neon': 'Yüksek Hızlı Anlık Muhakeme',
+    'gemini-4-hydrogen': 'Kuantum Hızında Doğrulanmış Yanıt',
+    'gemini-4-argon': 'Amiral Gemisi Genel Muhakeme',
+  };
+
+  return {
+    targetModelId,
+    domainLabel: domainMap[targetModelId] || 'Amiral Gemisi Akıllı Yönlendirme',
+    autoWebSearch: isWeb || targetModelId === 'perplexity-sonar-pro',
+    autoDeepReasoning:
+      reasoningLevelUsed === 'deep' || isMath || isSecurityOrArch || isCode,
+    scoreBreakdown: ranked.slice(0, 4).map(([mId, v]) => ({
+      modelId: mId,
+      score: v.score,
+      reason: v.reason,
+    })),
+    reasoningLevelUsed,
+    codeStrictnessUsed,
+  };
+}
+
 export function resolveAutoRoutedModel(
   prompt: string,
-  evolutionState?: SelfEvolutionState | null
+  evolutionState?: SelfEvolutionState | null,
+  preferences?: {
+    reasoningLevel?: 'fast' | 'balanced' | 'deep';
+    codeStrictness?: 'production' | 'explained';
+    webSearch?: boolean;
+    hasAttachment?: boolean;
+  }
 ): AutoRouteDecision {
+  if (
+    preferences &&
+    (preferences.reasoningLevel ||
+      preferences.codeStrictness ||
+      preferences.webSearch ||
+      preferences.hasAttachment)
+  ) {
+    const scored = scoreAutoRouterModel({
+      prompt,
+      reasoningLevel: preferences.reasoningLevel,
+      codeStrictness: preferences.codeStrictness,
+      webSearch: preferences.webSearch,
+      hasAttachment: preferences.hasAttachment,
+      evolutionState,
+    });
+    return {
+      targetModelId: scored.targetModelId,
+      domainLabel: scored.domainLabel,
+      autoWebSearch: scored.autoWebSearch,
+      autoDeepReasoning: scored.autoDeepReasoning,
+    };
+  }
+
   const clean = (prompt || '').trim();
   const lower = clean.toLowerCase();
   const folded = foldTurkishDiacritics(clean);
@@ -2987,8 +3430,24 @@ export function resolveAutoRoutedModel(
   }
 
   if (
-    /\b(kod|kodu|fonksiyon|script|class|sınıf|typescript|javascript|python|react|node|rust|golang|html|css|api|algoritma|hata ayıkla|bug|refactor|docker|kubernetes|git)\b/iu.test(
-      lower
+    /\b(guvenlik|zafiyet|owasp|audit|denetim|mimari tasarim|sistem tasarimi|mikroservis|dagitik|deadlock|kok neden)\b/i.test(
+      folded
+    )
+  ) {
+    return {
+      targetModelId: pickBoostedCategoryModel(
+        'gemini-4-carbon',
+        evolutionState
+      ),
+      domainLabel: 'Sistem Mimarisi, Güvenlik & Kök Neden Analizi',
+      autoWebSearch: false,
+      autoDeepReasoning: true,
+    };
+  }
+
+  if (
+    /\b(kod|kodu|fonksiyon|script|class|sinif|typescript|javascript|python|react|node|rust|golang|html|css|api|algoritma|hata ayikla|bug|refactor|docker|kubernetes|git)\b/i.test(
+      folded
     )
   ) {
     return {
@@ -3846,7 +4305,7 @@ export const INITIAL_VISUALS: GeneratedVisual[] = [
     style: 'Sinematik · Sinematik Drone Akışı',
     aspectRatio: '16:9',
     engineLabel: 'Google Veo & LTX Sinema · Gerçek MP4',
-    modelUsed: 'gemini-omni-1.1-flash',
+    modelUsed: 'gemini-omni-1.2-flash',
     resolution: '720P HD',
     duration: '5s',
     videoUrl: '/api/videos/showcase-veo.mp4',

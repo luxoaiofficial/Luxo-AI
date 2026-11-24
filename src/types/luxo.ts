@@ -37,7 +37,12 @@ export type LuxoModelId =
   | 'openai-o4-mini'
   | 'openai-o1-pro'
   | 'openai-codex-agent'
-  // Anthropic Claude (9)
+  | 'gpt-astra'
+  // Anthropic Claude (13)
+  | 'claude-5-2-fable'
+  | 'claude-5-5-opus'
+  | 'claude-5-5-sonnet'
+  | 'claude-5-5-haiku'
   | 'claude-4-6-opus'
   | 'claude-4-5-sonnet'
   | 'claude-4-opus'
@@ -115,12 +120,14 @@ export type LuxoModelId =
   | 'glm-4-plus'
   | 'minimax-01'
   | 'yi-lightning'
-  // Luxo Özel (7)
+  // Luxo Özel (9)
   | 'luxo-auto-router'
   | 'luxo-flash'
   | 'luxo-ultra'
   | 'luxo-argon'
   | 'luxo-quantum-math'
+  | 'luxo-sol'
+  | 'luxo-luna'
   | 'luxo-dev-helper'
   | 'luxo-dev';
 
@@ -201,6 +208,7 @@ export interface LuxoModelConfig {
   contextWindow: string;
   capabilities: string[];
   systemInstruction: string;
+  logoUrl?: string;
 }
 
 export interface LuxoVoiceOption {
