@@ -23,9 +23,11 @@
     "qrcode": "^1.5.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "recharts": "^2.12.7"
+    "recharts": "^2.12.7",
+    "unpdf": "^2.2.2"
   },
   "devDependencies": {
+    "@firebase/eslint-plugin-security-rules": "^0.0.2",
     "@tailwindcss/vite": "^4.0.0",
     "@types/node": "^20.11.24",
     "@types/qrcode": "^1.5.5",

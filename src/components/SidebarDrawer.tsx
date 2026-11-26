@@ -1,38 +1,48 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   Bell,
   BookOpen,
+  Bot,
   Brain,
   Calendar,
   Clock,
-  ExternalLink,
+  Columns2,
+  Compass,
+  Database,
   Folder,
   Globe,
+  Home,
   Image as ImageIcon,
-  KeyRound,
   Keyboard,
   Laptop,
   LayoutDashboard,
+  Lock,
   LogOut,
   Mail,
   MessageSquarePlus,
   Mic,
   Moon,
+  PanelLeftClose,
   Play,
   Plus,
   Search,
   Settings,
+  ShieldCheck,
+  Sparkles,
   SquarePen,
   Sun,
   ToggleLeft,
   ToggleRight,
   Trash2,
+  Workflow,
   X,
 } from 'lucide-react';
 import {
+  AppView,
   ChatThread,
   LuxoModelId,
   LuxoUser,
+  ProviderConnectionStatusMap,
   ScheduledRoutine,
 } from '../types/luxo';
 import {
@@ -40,17 +50,38 @@ import {
   PUBLIC_CHAT_MODEL_IDS,
   sanitizeLuxoBrand,
 } from '../utils/luxoLogic';
-import { searchSidebarChats } from '../utils/sidebarChatSearch';
+import {
+  DEFAULT_PROVIDER_STATUS,
+  isModelExecutableWithProviders,
+} from '../utils/tokenLimitsEngine';
+import {
+  searchSidebarChats,
+  type SidebarChatSearchResult,
+} from '../utils/sidebarChatSearch';
 import { LuxoLogo, ModelBrandAvatar } from './LuxoLogo';
 
 interface SidebarDrawerProps {
   isOpen: boolean;
+  isDesktopOpen?: boolean;
+  onToggleDesktop?: () => void;
   onClose: () => void;
+  currentView?: AppView;
   chats: ChatThread[];
   activeChatId: string | null;
   onSelectChat: (id: string) => void;
   onNewChat: () => void;
   onDeleteChat: (id: string) => void;
+  onOpenHome?: () => void;
+  onOpenModels?: () => void;
+  onOpenArena?: () => void;
+  onOpenAssistants?: () => void;
+  onOpenKnowledge?: () => void;
+  onOpenPrompts?: () => void;
+  onOpenWorkflows?: () => void;
+  onOpenAdmin?: () => void;
+  isAdminUser?: boolean;
+  zeroCostEnabled?: boolean;
+  connectedProviderCount?: number;
   onOpenImages: () => void;
   onOpenDashboard?: () => void;
   onOpenVoiceCommands?: () => void;
@@ -75,18 +106,71 @@ interface SidebarDrawerProps {
   onAddRoutine: (routine: Omit<ScheduledRoutine, 'id'>) => void;
   onRunRoutineNow: (routine: ScheduledRoutine) => void;
   user: LuxoUser;
+  providerStatus?: ProviderConnectionStatusMap;
   isDarkTheme?: boolean;
   onToggleTheme?: () => void;
 }
 
+type ChronologicalBucketLabel = 'Bugün' | 'Dün' | 'Önceki Günler';
+
+function groupChatsChronologically(
+  results: SidebarChatSearchResult[]
+): { label: ChronologicalBucketLabel; items: SidebarChatSearchResult[] }[] {
+  const now = new Date();
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  ).getTime();
+  const startOfYesterday = startOfToday - 24 * 60 * 60 * 1000;
+
+  const today: SidebarChatSearchResult[] = [];
+  const yesterday: SidebarChatSearchResult[] = [];
+  const older: SidebarChatSearchResult[] = [];
+
+  for (const item of results) {
+    const ts = item.chat.updatedAt || item.chat.createdAt || 0;
+    if (ts >= startOfToday) {
+      today.push(item);
+    } else if (ts >= startOfYesterday) {
+      yesterday.push(item);
+    } else {
+      older.push(item);
+    }
+  }
+
+  const buckets: {
+    label: ChronologicalBucketLabel;
+    items: SidebarChatSearchResult[];
+  }[] = [];
+  if (today.length > 0) buckets.push({ label: 'Bugün', items: today });
+  if (yesterday.length > 0) buckets.push({ label: 'Dün', items: yesterday });
+  if (older.length > 0) buckets.push({ label: 'Önceki Günler', items: older });
+  return buckets;
+}
+
 export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   isOpen,
+  isDesktopOpen = true,
+  onToggleDesktop,
   onClose,
+  currentView,
   chats,
   activeChatId,
   onSelectChat,
   onNewChat,
   onDeleteChat,
+  onOpenHome,
+  onOpenModels,
+  onOpenArena,
+  onOpenAssistants,
+  onOpenKnowledge,
+  onOpenPrompts,
+  onOpenWorkflows,
+  onOpenAdmin,
+  isAdminUser = false,
+  zeroCostEnabled = false,
+  connectedProviderCount,
   onOpenImages,
   onOpenDashboard,
   onOpenVoiceCommands,
@@ -111,11 +195,13 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   onAddRoutine,
   onRunRoutineNow,
   user,
+  providerStatus = DEFAULT_PROVIDER_STATUS,
   isDarkTheme,
   onToggleTheme,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [activeTab, setActiveTab] = useState<'chats' | 'routines'>('chats');
   const [showAllChats, setShowAllChats] = useState(false);
   const [showScheduledModal, setShowScheduledModal] = useState(false);
   const [showNewRoutineForm, setShowNewRoutineForm] = useState(false);
@@ -124,14 +210,23 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   const [newRoutinePrompt, setNewRoutinePrompt] = useState('');
   const [newRoutineModel, setNewRoutineModel] =
     useState<LuxoModelId>('luxo-flash');
+  const activeRoutinesCount = routines.filter((r) => r.active).length;
 
   const isSearching = searchQuery.trim().length > 0;
-  const searchResults = searchSidebarChats(chats, searchQuery);
+  const searchResults = useMemo(
+    () => searchSidebarChats(chats, searchQuery),
+    [chats, searchQuery]
+  );
   const totalMatchCount = isSearching
     ? searchResults.reduce((acc, item) => acc + item.matchCount, 0)
     : 0;
   const visibleResults =
-    isSearching || showAllChats ? searchResults : searchResults.slice(0, 8);
+    isSearching || showAllChats ? searchResults : searchResults.slice(0, 12);
+
+  const groupedChats = useMemo(
+    () => (isSearching ? [] : groupChatsChronologically(visibleResults)),
+    [isSearching, visibleResults]
+  );
 
   const handleCreateRoutine = (e: React.FormEvent) => {
     e.preventDefault();
@@ -154,93 +249,69 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
       {isOpen && (
         <div
           onClick={onClose}
-          className="fixed inset-0 bg-black/40 backdrop-blur-xs z-40 transition-opacity duration-200"
+          className="fixed inset-0 bg-black/40 backdrop-blur-xs z-40 lg:hidden transition-opacity duration-200"
           aria-hidden="true"
         />
       )}
 
       <aside
-        aria-hidden={!isOpen}
-        className={`fixed top-0 left-0 bottom-0 h-[100dvh] max-h-[100dvh] w-[310px] max-w-[88vw] bg-white dark:bg-[#18181b] z-50 flex flex-col justify-between shadow-2xl transition-all duration-300 ease-in-out border-r border-neutral-200 dark:border-neutral-800 overflow-hidden ${
+        data-testid="workspace-sidebar-rail"
+        className={`fixed lg:static top-0 left-0 bottom-0 h-[100dvh] lg:h-full max-h-[100dvh] bg-[#f8fafc] dark:bg-[#111420] z-50 lg:z-20 flex flex-col justify-between border-r border-slate-200/80 dark:border-slate-800/80 overflow-hidden transition-all duration-200 ease-out shrink-0 ${
           isOpen
-            ? 'translate-x-0 visible'
-            : '-translate-x-full invisible pointer-events-none'
+            ? 'translate-x-0 w-[290px] max-w-[85vw] visible shadow-2xl lg:shadow-none'
+            : '-translate-x-full invisible pointer-events-none w-[290px]'
+        } ${
+          isDesktopOpen
+            ? 'lg:translate-x-0 lg:w-[264px] lg:visible lg:pointer-events-auto'
+            : 'lg:w-0 lg:border-r-0 lg:-translate-x-full lg:invisible lg:pointer-events-none'
         }`}
       >
-        <div className="p-4 pb-2 shrink-0">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
+        {/* Top Brand + New Chat + Search */}
+        <div className="p-3 pb-2 shrink-0 space-y-2">
+          <div className="flex items-center justify-between px-1">
+            <button
+              type="button"
+              onClick={() => {
+                if (onOpenHome) {
+                  onOpenHome();
+                  onClose();
+                }
+              }}
+              className="flex items-center gap-2 min-w-0 cursor-pointer text-left"
+            >
               <LuxoLogo
-                className="w-6 h-6 text-black dark:text-white"
-                size={24}
+                className="w-5 h-5 text-violet-600 dark:text-violet-400 shrink-0"
+                size={20}
               />
-              <h2 className="text-xl font-bold text-neutral-900 dark:text-white tracking-tight">
+              <span className="text-sm font-bold text-slate-900 dark:text-slate-100 tracking-tight truncate">
                 Luxo AI
-              </h2>
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  onNewChat();
-                  onClose();
-                }}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
-                aria-label="Yeni Sohbet"
-                title="Yeni Sohbet"
-              >
-                <SquarePen className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onOpenSettings();
-                  onClose();
-                }}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
-                aria-label="Ayarlar"
-                title="Ayarlar"
-              >
-                <Settings className="w-4 h-4" />
-              </button>
-              {onOpenKeyboardShortcuts && (
+              </span>
+            </button>
+
+            <div className="flex items-center gap-0.5 shrink-0">
+              {onToggleDesktop && (
                 <button
                   type="button"
-                  data-testid="sidebar-shortcuts-btn"
-                  onClick={() => {
-                    onOpenKeyboardShortcuts();
-                    onClose();
-                  }}
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
-                  aria-label="Klavye Kısayolları"
-                  title="Klavye Kısayolları (Ctrl+/)"
+                  data-testid="sidebar-collapse-desktop-btn"
+                  onClick={onToggleDesktop}
+                  className="hidden lg:flex w-8 h-8 rounded-lg items-center justify-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-slate-800 transition cursor-pointer"
+                  aria-label="Kenar Çubuğunu Daralt"
+                  title="Kenar Çubuğunu Daralt"
                 >
-                  <Keyboard className="w-4 h-4" />
+                  <PanelLeftClose className="w-4 h-4" />
                 </button>
               )}
               <button
                 type="button"
-                data-testid="sidebar-focus-search-btn"
-                onClick={() => searchInputRef.current?.focus()}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
-                aria-label="Sohbet İçeriklerinde Ara"
-                title="Sohbet İçeriklerinde Ara"
-              >
-                <Search className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
                 onClick={onClose}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition cursor-pointer"
+                className="lg:hidden w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-slate-800 transition cursor-pointer"
                 aria-label="Menüyü Kapat"
-                title="Kapat"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
           </div>
 
-          {/* Prominent Primary New Chat Button */}
           <button
             type="button"
             data-testid="sidebar-main-new-chat-btn"
@@ -248,107 +319,241 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               onNewChat();
               onClose();
             }}
-            className="w-full flex items-center justify-between px-3.5 py-2.5 mb-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-semibold text-xs shadow-md transition cursor-pointer"
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-semibold text-xs transition cursor-pointer shadow-xs"
           >
-            <div className="flex items-center gap-2">
-              <SquarePen className="w-4 h-4" />
-              <span>Yeni Sohbet Başlat</span>
-            </div>
-            <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-              {PUBLIC_CHAT_MODEL_IDS.length} AI
+            <span className="flex items-center gap-2">
+              <SquarePen className="w-3.5 h-3.5" />
+              <span>Yeni Sohbet</span>
             </span>
+            <span className="text-[10px] opacity-75 font-mono">⌘N</span>
           </button>
 
-          {/* Persistent Global Search Across Past Chat Threads & Messages */}
-          <div className="mb-2 space-y-1">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                data-testid="sidebar-chat-search-input"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Geçmiş sohbet ve mesajlarda ara..."
-                aria-label="Geçmiş sohbet ve mesajlarda ara"
-                className="w-full pl-8 pr-8 py-2 bg-neutral-100 dark:bg-neutral-800/90 border border-neutral-200/70 dark:border-neutral-700/70 rounded-xl text-xs text-neutral-900 dark:text-white focus:outline-hidden focus:ring-2 focus:ring-blue-500/40"
-              />
-              {isSearching && (
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              data-testid="sidebar-chat-search-input"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Sohbetlerde ara..."
+              aria-label="Geçmiş sohbet ve mesajlarda ara"
+              className="w-full pl-8 pr-7 py-1.5 bg-white dark:bg-[#0b0d14] border border-slate-200/80 dark:border-slate-800 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-hidden focus:border-violet-500"
+            />
+            {isSearching && (
+              <button
+                type="button"
+                data-testid="sidebar-chat-search-clear"
+                onClick={() => {
+                  setSearchQuery('');
+                  searchInputRef.current?.focus();
+                }}
+                aria-label="Aramayı temizle"
+                className="w-6 h-6 rounded-md flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-white absolute right-1 top-1/2 -translate-y-1/2 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          {isSearching && (
+            <div
+              data-testid="sidebar-chat-search-summary"
+              className="flex items-center justify-between px-1 text-[10px] font-medium text-slate-500 dark:text-slate-400 tabular-nums"
+            >
+              <span>
+                {searchResults.length} sohbet · {totalMatchCount} eşleşme
+              </span>
+            </div>
+          )}
+
+          <div
+            role="tablist"
+            aria-label="Kenar çubuğu sekmeleri"
+            className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-slate-200/70 dark:bg-[#0b0d14] border border-slate-200/60 dark:border-slate-800/80"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'chats'}
+              data-testid="sidebar-tab-chats"
+              onClick={() => setActiveTab('chats')}
+              className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
+                activeTab === 'chats'
+                  ? 'bg-white dark:bg-[#181c2b] text-slate-900 dark:text-slate-100 shadow-xs'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              Sohbetler
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'routines'}
+              data-testid="sidebar-tab-routines"
+              onClick={() => setActiveTab('routines')}
+              className={`py-1.5 px-2 rounded-lg text-[11px] font-semibold transition cursor-pointer tabular-nums ${
+                activeTab === 'routines'
+                  ? 'bg-white dark:bg-[#181c2b] text-slate-900 dark:text-slate-100 shadow-xs'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+              }`}
+            >
+              Rutinler ({activeRoutinesCount})
+            </button>
+          </div>
+        </div>
+
+        {/* Scrollable Workspace Links & Chronological Chats */}
+        <div className="flex-1 overflow-y-auto px-2.5 py-1.5 space-y-4 min-h-0">
+          {activeTab === 'routines' ? (
+            <div className="space-y-2" data-testid="sidebar-routines-list">
+              {routines.map((routine) => {
+                const rModel =
+                  LUXO_MODELS[routine.modelId] || LUXO_MODELS['luxo-flash'];
+                return (
+                  <div
+                    key={routine.id}
+                    className="p-2.5 rounded-xl bg-white dark:bg-[#1c1d22] border border-neutral-200/80 dark:border-neutral-800 space-y-2"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-semibold text-neutral-900 dark:text-white truncate">
+                          {routine.title}
+                        </div>
+                        <div className="text-[10px] text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">
+                          {routine.time} · {rModel.name}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onToggleRoutine(routine.id)}
+                        className="cursor-pointer shrink-0"
+                        aria-label={`${routine.title} durumunu değiştir`}
+                      >
+                        {routine.active ? (
+                          <ToggleRight className="w-5 h-5 text-blue-500" />
+                        ) : (
+                          <ToggleLeft className="w-5 h-5 text-neutral-400" />
+                        )}
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] text-neutral-400 truncate">
+                        {routine.lastRun || 'Hazır'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onRunRoutineNow(routine);
+                          onClose();
+                        }}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 text-[10px] font-semibold cursor-pointer shrink-0"
+                      >
+                        <Play className="w-2.5 h-2.5" />
+                        <span>Çalıştır</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+
+              <button
+                type="button"
+                onClick={() => setShowScheduledModal(true)}
+                className="w-full py-2 px-2.5 rounded-xl border border-dashed border-neutral-300 dark:border-neutral-700 text-xs font-medium text-neutral-600 dark:text-neutral-300 hover:border-neutral-500 transition flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Rutin Yönet &amp; Ekle</span>
+              </button>
+            </div>
+          ) : !isSearching ? (
+            <div className="space-y-3" data-testid="sidebar-chat-list">
+              {groupedChats.map((bucket) => (
+                <div key={bucket.label} className="space-y-0.5">
+                  <div className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+                    {bucket.label}
+                  </div>
+                  {bucket.items.map(({ chat }) => (
+                    <div
+                      key={chat.id}
+                      className={`group px-1.5 py-0.5 rounded-xl text-xs transition flex items-center justify-between gap-1 ${
+                        activeChatId === chat.id
+                          ? 'bg-violet-600/12 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300 font-semibold border border-violet-500/25'
+                          : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-[#181c2b] font-normal border border-transparent'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        data-testid={`sidebar-chat-item-${chat.id}`}
+                        onClick={() => {
+                          onSelectChat(chat.id);
+                          onClose();
+                        }}
+                        className="flex-1 min-w-0 text-left px-1.5 py-1.5 truncate cursor-pointer"
+                      >
+                        {sanitizeLuxoBrand(chat.title)}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteChat(chat.id)}
+                        className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 text-slate-400 hover:text-rose-500 transition cursor-pointer shrink-0"
+                        aria-label={`Sohbeti Sil: ${chat.title}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ))}
+
+              {chats.length === 0 && (
+                <p className="text-xs text-slate-400 px-2.5 py-3 text-center">
+                  Henüz sohbet geçmişi yok.
+                </p>
+              )}
+
+              {searchResults.length > 12 && !showAllChats && (
                 <button
                   type="button"
-                  data-testid="sidebar-chat-search-clear"
-                  onClick={() => {
-                    setSearchQuery('');
-                    searchInputRef.current?.focus();
-                  }}
-                  aria-label="Aramayı temizle"
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-neutral-400 hover:text-neutral-700 dark:hover:text-white absolute right-1.5 top-1/2 -translate-y-1/2 cursor-pointer"
+                  onClick={() => setShowAllChats(true)}
+                  className="w-full text-left px-2.5 py-1.5 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-medium transition cursor-pointer"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  Tümünü gör ({searchResults.length})
                 </button>
               )}
             </div>
-            {isSearching && (
-              <div
-                data-testid="sidebar-chat-search-summary"
-                className="flex items-center justify-between px-1 text-[10px] font-medium text-neutral-500 dark:text-neutral-400"
-              >
-                <span>
-                  {searchResults.length} sohbet · {totalMatchCount} eşleşme
-                </span>
-                <span>Başlık + tüm mesajlar</span>
-              </div>
-            )}
-          </div>
-
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2.5 min-h-0">
-          {isSearching && (
+          ) : (
             <div className="space-y-1" data-testid="sidebar-chat-list">
               {visibleResults.map((result) => {
                 const { chat, matchedIn, matchCount, snippet } = result;
                 return (
-                  <div
+                  <button
                     key={chat.id}
+                    type="button"
                     data-testid={`sidebar-chat-item-${chat.id}`}
                     onClick={() => {
                       onSelectChat(chat.id);
                       onClose();
                     }}
-                    className={`group px-3 py-2.5 rounded-2xl text-sm font-normal transition cursor-pointer ${
+                    className={`w-full text-left group px-2.5 py-2 rounded-xl text-xs transition cursor-pointer ${
                       activeChatId === chat.id
-                        ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white font-medium'
-                        : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800/50'
+                        ? 'bg-violet-600/12 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300 font-semibold border border-violet-500/25'
+                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-[#181c2b] border border-transparent'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate pr-1 font-medium text-xs sm:text-sm">
+                      <span className="truncate pr-1 font-medium">
                         {sanitizeLuxoBrand(chat.title)}
                       </span>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <span className="px-1.5 py-0.5 rounded-md bg-blue-500/12 text-blue-600 dark:text-blue-400 text-[10px] font-bold tabular-nums">
-                          {matchCount}×
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDeleteChat(chat.id);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-neutral-400 hover:text-red-500 transition cursor-pointer shrink-0"
-                          aria-label={`Sohbeti Sil: ${chat.title}`}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      <span className="text-[10px] font-mono text-slate-500 shrink-0 tabular-nums">
+                        {matchCount}×
+                      </span>
                     </div>
                     {snippet && (
                       <div
                         data-testid={`sidebar-chat-snippet-${chat.id}`}
-                        className="mt-1 text-[11px] leading-snug text-neutral-500 dark:text-neutral-400 line-clamp-2"
+                        className="mt-1 text-[11px] leading-snug text-slate-500 dark:text-slate-400 line-clamp-2"
                       >
-                        <span className="font-semibold text-neutral-600 dark:text-neutral-300 mr-1">
+                        <span className="font-semibold text-slate-600 dark:text-slate-300 mr-1">
                           {snippet.role === 'user'
                             ? 'Siz:'
                             : matchedIn === 'message'
@@ -356,35 +561,204 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                             : 'İçerik:'}
                         </span>
                         <span>{snippet.before}</span>
-                        <mark className="bg-amber-200/80 dark:bg-amber-500/30 text-neutral-900 dark:text-amber-200 px-0.5 rounded-xs font-semibold">
+                        <mark className="bg-amber-200/80 dark:bg-amber-500/30 text-slate-900 dark:text-amber-200 px-0.5 rounded-xs font-semibold">
                           {snippet.match}
                         </mark>
                         <span>{snippet.after}</span>
                       </div>
                     )}
-                  </div>
+                  </button>
                 );
               })}
               {chats.length > 0 && searchResults.length === 0 && (
                 <p
                   data-testid="sidebar-chat-search-empty"
-                  className="text-xs text-neutral-500 dark:text-neutral-400 px-3 py-4 text-center"
+                  className="text-xs text-slate-500 dark:text-slate-400 px-2.5 py-4 text-center"
                 >
-                  &ldquo;{searchQuery.trim()}&rdquo; ile eşleşen sohbet veya mesaj içeriği bulunamadı.
+                  Eşleşen sohbet bulunamadı.
                 </p>
               )}
             </div>
           )}
 
-          {isSearching && (
-            <div className="border-t border-neutral-200 dark:border-neutral-800 pt-2">
-              <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
-                Hızlı Menü
-              </p>
+          {/* Luxo V2 Primary Platform Navigation */}
+          <div className="pt-2 border-t border-slate-200/80 dark:border-slate-800/80 space-y-0.5">
+            <div className="px-2 pb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              <span>Platform</span>
+              {zeroCostEnabled && (
+                <span className="text-emerald-600 dark:text-emerald-400">Zero-Cost</span>
+              )}
             </div>
-          )}
 
-          <nav className="space-y-0.5">
+            {onOpenHome && (
+              <button
+                type="button"
+                data-testid="sidebar-nav-home-btn"
+                onClick={() => {
+                  onOpenHome();
+                  onClose();
+                }}
+                className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer text-left ${
+                  currentView === 'home'
+                    ? 'bg-violet-600/12 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300 font-semibold'
+                    : 'text-slate-700 dark:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-[#181c2b]'
+                }`}
+              >
+                <Home className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Ana Panel</span>
+              </button>
+            )}
+
+            {onOpenModels && (
+              <button
+                type="button"
+                data-testid="sidebar-nav-models-btn"
+                onClick={() => {
+                  onOpenModels();
+                  onClose();
+                }}
+                className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer text-left ${
+                  currentView === 'models'
+                    ? 'bg-violet-600/12 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300 font-semibold'
+                    : 'text-slate-700 dark:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-[#181c2b]'
+                }`}
+              >
+                <span className="flex items-center gap-2.5 min-w-0">
+                  <Compass className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Model Merkezi</span>
+                </span>
+                {typeof connectedProviderCount === 'number' && (
+                  <span className="text-[10px] font-mono text-slate-400 tabular-nums shrink-0">
+                    {connectedProviderCount}
+                  </span>
+                )}
+              </button>
+            )}
+
+            {onOpenArena && (
+              <button
+                type="button"
+                data-testid="sidebar-nav-arena-btn"
+                onClick={() => {
+                  onOpenArena();
+                  onClose();
+                }}
+                className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer text-left ${
+                  currentView === 'arena'
+                    ? 'bg-violet-600/12 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300 font-semibold'
+                    : 'text-slate-700 dark:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-[#181c2b]'
+                }`}
+              >
+                <Columns2 className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Model Arena</span>
+              </button>
+            )}
+
+            {onOpenAssistants && (
+              <button
+                type="button"
+                data-testid="sidebar-nav-assistants-btn"
+                onClick={() => {
+                  onOpenAssistants();
+                  onClose();
+                }}
+                className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer text-left ${
+                  currentView === 'assistants'
+                    ? 'bg-violet-600/12 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300 font-semibold'
+                    : 'text-slate-700 dark:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-[#181c2b]'
+                }`}
+              >
+                <Bot className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">AI Asistanlar</span>
+              </button>
+            )}
+
+            {onOpenKnowledge && (
+              <button
+                type="button"
+                data-testid="sidebar-nav-knowledge-btn"
+                onClick={() => {
+                  onOpenKnowledge();
+                  onClose();
+                }}
+                className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer text-left ${
+                  currentView === 'knowledge'
+                    ? 'bg-violet-600/12 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300 font-semibold'
+                    : 'text-slate-700 dark:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-[#181c2b]'
+                }`}
+              >
+                <Database className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Bilgi Tabanı &amp; RAG</span>
+              </button>
+            )}
+
+            {onOpenPrompts && (
+              <button
+                type="button"
+                data-testid="sidebar-nav-prompts-btn"
+                onClick={() => {
+                  onOpenPrompts();
+                  onClose();
+                }}
+                className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer text-left ${
+                  currentView === 'prompts'
+                    ? 'bg-violet-600/12 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300 font-semibold'
+                    : 'text-slate-700 dark:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-[#181c2b]'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">İstem Kitaplığı</span>
+              </button>
+            )}
+
+            {onOpenWorkflows && (
+              <button
+                type="button"
+                data-testid="sidebar-nav-workflows-btn"
+                onClick={() => {
+                  onOpenWorkflows();
+                  onClose();
+                }}
+                className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer text-left ${
+                  currentView === 'workflows'
+                    ? 'bg-violet-600/12 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300 font-semibold'
+                    : 'text-slate-700 dark:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-[#181c2b]'
+                }`}
+              >
+                <Workflow className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">İş Akışları</span>
+              </button>
+            )}
+
+            {onOpenAdmin && (
+              <button
+                type="button"
+                data-testid="sidebar-nav-admin-btn"
+                onClick={() => {
+                  onOpenAdmin();
+                  onClose();
+                }}
+                className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer text-left ${
+                  currentView === 'admin'
+                    ? 'bg-violet-600/12 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300 font-semibold'
+                    : 'text-slate-700 dark:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-[#181c2b]'
+                }`}
+              >
+                <span className="flex items-center gap-2.5 min-w-0">
+                  <ShieldCheck className="w-3.5 h-3.5 text-violet-500 shrink-0" />
+                  <span className="truncate">Yönetim Merkezi</span>
+                </span>
+                {!isAdminUser && <Lock className="w-3 h-3 text-slate-400 shrink-0" />}
+              </button>
+            )}
+          </div>
+
+          {/* Clean Langdock Workspace Navigation */}
+          <div className="pt-2 border-t border-slate-200/80 dark:border-slate-800/80 space-y-0.5">
+            <div className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              Stüdyolar &amp; Araçlar
+            </div>
+
             {onOpenDashboard && (
               <button
                 type="button"
@@ -393,25 +767,10 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                   onOpenDashboard();
                   onClose();
                 }}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-semibold text-neutral-900 dark:text-white bg-neutral-100/75 dark:bg-neutral-800/75 hover:bg-neutral-200/80 dark:hover:bg-neutral-800 transition cursor-pointer text-left"
+                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-[#181c2b] transition cursor-pointer text-left"
               >
-                <LayoutDashboard className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                <span className="truncate">Kişisel Kontrol Paneli (Dashboard)</span>
-              </button>
-            )}
-
-            {onOpenVoiceCommands && (
-              <button
-                type="button"
-                data-testid="sidebar-nav-voice-cmd-btn"
-                onClick={() => {
-                  onOpenVoiceCommands();
-                  onClose();
-                }}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
-              >
-                <Mic className="w-4 h-4 text-emerald-500 shrink-0" />
-                <span className="truncate">Sesli Komut Modu</span>
+                <LayoutDashboard className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <span className="truncate">Kontrol Paneli</span>
               </button>
             )}
 
@@ -421,10 +780,34 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                 onOpenImages();
                 onClose();
               }}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-[#181c2b] transition cursor-pointer text-left"
             >
-              <ImageIcon className="w-4 h-4 text-amber-500 shrink-0" />
-              <span className="truncate">Nano Banana & Veo Stüdyo</span>
+              <ImageIcon className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+              <span className="truncate">Görsel &amp; Video Stüdyosu</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                onOpenProjects();
+                onClose();
+              }}
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-[#181c2b] transition cursor-pointer text-left"
+            >
+              <Folder className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+              <span className="truncate">Projeler</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                onOpenStudio();
+                onClose();
+              }}
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-[#181c2b] transition cursor-pointer text-left"
+            >
+              <Laptop className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+              <span className="truncate">Kod Stüdyosu</span>
             </button>
 
             <button
@@ -433,73 +816,49 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                 onOpenEvolution();
                 onClose();
               }}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-[#181c2b] transition cursor-pointer text-left"
             >
-              <Brain className="w-4 h-4 text-indigo-500 shrink-0" />
-              <span className="truncate">Otonom Gelişim & AI Evrim</span>
+              <Brain className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+              <span className="truncate">AI Gelişim &amp; Benchmark</span>
             </button>
 
-            {onOpenNotifications && (
-              <button
-                type="button"
-                data-testid="sidebar-notifications-btn"
-                onClick={() => {
-                  onOpenNotifications();
-                  onClose();
-                }}
-                className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <Bell className="w-4 h-4 text-rose-500 shrink-0" />
-                  <span className="truncate">Bildirim Merkezi</span>
-                </div>
-                {unreadNotificationCount > 0 && (
-                  <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold tabular-nums shrink-0">
-                    {unreadNotificationCount}
-                  </span>
-                )}
-              </button>
-            )}
+            <button
+              type="button"
+              data-testid="sidebar-nav-settings-btn"
+              onClick={() => {
+                onOpenSettings();
+                onClose();
+              }}
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-[#181c2b] transition cursor-pointer text-left"
+            >
+              <Settings className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+              <span className="truncate">Ayarlar</span>
+            </button>
 
-            {onOpenSocial && (
-              <button
-                type="button"
-                onClick={() => {
-                  onOpenSocial();
-                  onClose();
-                }}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
-              >
-                <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                <span className="truncate">Etkinlik Takvimi & Sosyal Ağ</span>
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                onOpenLibrary();
+                onClose();
+              }}
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/70 transition cursor-pointer text-left"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+              <span className="truncate">Kitaplık</span>
+            </button>
 
-            {onOpenContentStudio && (
+            {onOpenVoiceCommands && (
               <button
                 type="button"
+                data-testid="sidebar-nav-voice-cmd-btn"
                 onClick={() => {
-                  onOpenContentStudio();
+                  onOpenVoiceCommands();
                   onClose();
                 }}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/70 transition cursor-pointer text-left"
               >
-                <SquarePen className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                <span className="truncate">İçerik Stüdyosu (SEO & Blog)</span>
-              </button>
-            )}
-
-            {onOpenHub && (
-              <button
-                type="button"
-                onClick={() => {
-                  onOpenHub();
-                  onClose();
-                }}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
-              >
-                <Globe className="w-4 h-4 text-sky-500 shrink-0" />
-                <span className="truncate">Topluluk, SEO & Performans</span>
+                <Mic className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                <span className="truncate">Sesli Komut Modu</span>
               </button>
             )}
 
@@ -511,101 +870,101 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                   onOpenGmail();
                   onClose();
                 }}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/70 transition cursor-pointer text-left"
               >
-                <div className="flex items-center gap-3 min-w-0">
-                  <Mail className="w-4 h-4 text-rose-500 shrink-0" />
-                  <span className="truncate">Gmail Çalışma Alanı</span>
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400">
-                  Google
-                </span>
+                <Mail className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                <span className="truncate">Gmail Çalışma Alanı</span>
+              </button>
+            )}
+
+            {onOpenSocial && (
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenSocial();
+                  onClose();
+                }}
+                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/70 transition cursor-pointer text-left"
+              >
+                <Calendar className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                <span className="truncate">Etkinlik &amp; Sosyal Ağ</span>
+              </button>
+            )}
+
+            {onOpenContentStudio && (
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenContentStudio();
+                  onClose();
+                }}
+                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/70 transition cursor-pointer text-left"
+              >
+                <SquarePen className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                <span className="truncate">İçerik &amp; SEO Stüdyosu</span>
+              </button>
+            )}
+
+            {onOpenHub && (
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenHub();
+                  onClose();
+                }}
+                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/70 transition cursor-pointer text-left"
+              >
+                <Globe className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                <span className="truncate">Topluluk &amp; Performans</span>
               </button>
             )}
 
             <button
               type="button"
-              onClick={() => {
-                onOpenLibrary();
-                onClose();
-              }}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
-            >
-              <BookOpen className="w-4 h-4 text-neutral-600 dark:text-neutral-400 shrink-0" />
-              <span className="truncate">Kitaplık</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                onOpenProjects();
-                onClose();
-              }}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
-            >
-              <Folder className="w-4 h-4 text-neutral-600 dark:text-neutral-400 shrink-0" />
-              <span className="truncate">Projeler</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                onSelectModel('gemini-4-argon');
-                onOpenStudio();
-                onClose();
-              }}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left group"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <Laptop className="w-4 h-4 text-emerald-500 group-hover:scale-105 transition shrink-0" />
-                <span className="truncate">Argon Kod Stüdyosu</span>
-              </div>
-              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold shrink-0 ml-1">
-                MIT
-              </span>
-            </button>
-
-            <button
-              type="button"
               onClick={() => setShowScheduledModal(true)}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/70 transition cursor-pointer text-left"
             >
-              <Clock className="w-4 h-4 text-neutral-600 dark:text-neutral-400 shrink-0" />
-              <span className="truncate">Zamanlandı</span>
+              <Clock className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+              <span className="truncate">Zamanlanmış Görevler</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                onOpenSettings('plugins');
-                onClose();
-              }}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
-            >
-              <Settings className="w-4 h-4 text-neutral-600 dark:text-neutral-400 shrink-0" />
-              <span className="truncate">Eklentiler</span>
-            </button>
+            {onOpenNotifications && (
+              <button
+                type="button"
+                data-testid="sidebar-notifications-btn"
+                onClick={() => {
+                  onOpenNotifications();
+                  onClose();
+                }}
+                className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/70 transition cursor-pointer text-left"
+              >
+                <span className="flex items-center gap-2.5 min-w-0">
+                  <Bell className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                  <span className="truncate">Bildirimler</span>
+                </span>
+                {unreadNotificationCount > 0 && (
+                  <span className="text-[11px] font-semibold text-rose-500 tabular-nums shrink-0">
+                    {unreadNotificationCount}
+                  </span>
+                )}
+              </button>
+            )}
 
-            {/* Direct Settings Access in Main Nav List */}
-            <button
-              type="button"
-              data-testid="sidebar-nav-settings-btn"
-              onClick={() => {
-                onOpenSettings();
-                onClose();
-              }}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-2xl text-sm font-semibold text-neutral-900 dark:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <Settings className="w-4 h-4 text-blue-500 shrink-0" />
-                <span className="truncate">Ayarlar & Profil</span>
-              </div>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                Gelişmiş
-              </span>
-            </button>
+            {onOpenKeyboardShortcuts && (
+              <button
+                type="button"
+                data-testid="sidebar-shortcuts-btn"
+                onClick={() => {
+                  onOpenKeyboardShortcuts();
+                  onClose();
+                }}
+                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/70 transition cursor-pointer text-left"
+              >
+                <Keyboard className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                <span className="truncate">Kısayollar</span>
+              </button>
+            )}
 
-            {/* Direct Feedback Access in Main Nav List */}
             <button
               type="button"
               data-testid="sidebar-nav-feedback-btn"
@@ -617,167 +976,124 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                 }
                 onClose();
               }}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
+              className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/70 transition cursor-pointer text-left"
             >
-              <div className="flex items-center gap-3 min-w-0">
-                <MessageSquarePlus className="w-4 h-4 text-rose-500 shrink-0" />
-                <span className="truncate">Geri Bildirim & Hata Bildir</span>
-              </div>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400">
-                Destek
-              </span>
+              <MessageSquarePlus className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+              <span className="truncate">Geri Bildirim</span>
             </button>
+          </div>
 
-            {/* Direct Standalone Live Site Link */}
-            <a
-              href="https://ais-pre-fudupxh6ld5rvvbfz5qwt4-705459740809.europe-west2.run.app/"
-              target="_blank"
-              rel="noopener noreferrer"
-              data-testid="sidebar-nav-direct-link-btn"
-              className="w-full flex items-center justify-between px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <Globe className="w-4 h-4 text-emerald-500 shrink-0" />
-                <span className="truncate">Doğrudan Canlı Siteye Gir</span>
-              </div>
-              <ExternalLink className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-            </a>
-
-            {onToggleTheme && (
-              <button
-                type="button"
-                data-testid="sidebar-nav-theme-toggle"
-                onClick={onToggleTheme}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-2xl text-sm font-medium text-neutral-800 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800/80 transition cursor-pointer text-left"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  {isDarkTheme ? (
-                    <Sun className="w-4 h-4 text-amber-500 shrink-0" />
-                  ) : (
-                    <Moon className="w-4 h-4 text-neutral-600 dark:text-neutral-400 shrink-0" />
-                  )}
-                  <span className="truncate">
-                    {isDarkTheme ? 'Açık Temaya Geç' : 'Koyu Temaya Geç'}
-                  </span>
-                </div>
-                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-neutral-200/60 dark:bg-neutral-700/60 text-neutral-600 dark:text-neutral-300">
-                  {isDarkTheme ? 'Koyu' : 'Açık'}
-                </span>
-              </button>
-            )}
-          </nav>
-
-          {!isSearching && (
-            <>
-              <div className="border-t border-neutral-200 dark:border-neutral-800 mx-1 pt-2">
-                <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
-                  Geçmiş Sohbetler
-                </p>
-              </div>
-              <div className="space-y-1" data-testid="sidebar-chat-list">
-                {visibleResults.map((result) => {
-                  const { chat } = result;
-                  return (
-                    <div
-                      key={chat.id}
-                      data-testid={`sidebar-chat-item-${chat.id}`}
-                      onClick={() => {
-                        onSelectChat(chat.id);
-                        onClose();
-                      }}
-                      className={`group px-3 py-2.5 rounded-2xl text-sm font-normal transition cursor-pointer ${
-                        activeChatId === chat.id
-                          ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white font-medium'
-                          : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800/50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate pr-1 font-medium text-xs sm:text-sm">
-                          {sanitizeLuxoBrand(chat.title)}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDeleteChat(chat.id);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-neutral-400 hover:text-red-500 transition cursor-pointer shrink-0"
-                          aria-label={`Sohbeti Sil: ${chat.title}`}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-                {chats.length === 0 && (
-                  <p className="text-xs text-neutral-400 px-3 py-4 text-center">
-                    Henüz sohbet geçmişi yok.
-                  </p>
-                )}
-                {searchResults.length > 8 && !showAllChats && (
+          {/* Hızlı Model Değiştir */}
+          <div className="pt-2 border-t border-neutral-200/80 dark:border-neutral-800/80 space-y-1">
+            <div className="px-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+              Hızlı Model Değiştir
+            </div>
+            <div className="grid grid-cols-1 gap-0.5">
+              {PUBLIC_CHAT_MODEL_IDS.slice(0, 6).map((mId) => {
+                const m = LUXO_MODELS[mId];
+                if (!m) return null;
+                const avail = isModelExecutableWithProviders(
+                  mId,
+                  providerStatus,
+                  user,
+                  m.allowGuest !== false
+                );
+                return (
                   <button
+                    key={mId}
                     type="button"
-                    onClick={() => setShowAllChats(true)}
-                    className="w-full text-left px-3 py-2 text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium transition cursor-pointer"
+                    data-testid={`sidebar-quick-model-${mId}`}
+                    onClick={() => {
+                      if (avail.unlocked) {
+                        onSelectModel(mId);
+                        onClose();
+                      } else if (avail.reason === 'guest_restricted') {
+                        onClose();
+                        onOpenAuthModal();
+                      } else {
+                        onOpenSettings('ai_tuning');
+                        onClose();
+                      }
+                    }}
+                    title={avail.unlocked ? m.name : `${m.name} (${avail.reasonLabelTr})`}
+                    className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs transition cursor-pointer text-left ${
+                      avail.unlocked
+                        ? 'text-neutral-700 dark:text-neutral-200 hover:bg-neutral-200/60 dark:hover:bg-neutral-800/70 font-medium'
+                        : 'text-neutral-400 dark:text-neutral-500 hover:bg-neutral-200/40 dark:hover:bg-neutral-800/40'
+                    }`}
                   >
-                    Tümünü gör ({searchResults.length})...
+                    <span className="flex items-center gap-2 min-w-0">
+                      <ModelBrandAvatar
+                        name={m.name}
+                        logoUrl={m.logoUrl}
+                        provider={m.provider}
+                        modelId={m.id}
+                        accentColor={m.accentColor}
+                        sizeClass="w-4 h-4 rounded-sm"
+                      />
+                      <span className="truncate">{m.name}</span>
+                    </span>
+                    {!avail.unlocked && (
+                      <Lock className="w-3 h-3 text-amber-500 shrink-0" />
+                    )}
                   </button>
-                )}
-              </div>
-            </>
-          )}
+                );
+              })}
+            </div>
+          </div>
         </div>
 
-        <div className="p-3 pb-8 sm:pb-3 border-t border-neutral-200 dark:border-neutral-800 flex items-center justify-between gap-1.5 shrink-0 bg-white dark:bg-[#18181b] z-20 shadow-lg">
+        {/* Minimal Footer */}
+        <div className="p-2.5 pb-6 sm:pb-2.5 border-t border-slate-200/80 dark:border-slate-800/80 flex items-center justify-between gap-2 shrink-0 bg-[#f8fafc] dark:bg-[#111420]">
           <button
             type="button"
-            data-testid="sidebar-footer-new-chat-btn"
+            data-testid="sidebar-footer-settings-btn"
             onClick={() => {
-              onNewChat();
+              onOpenSettings();
               onClose();
             }}
-            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-semibold rounded-full text-xs transition shadow-sm cursor-pointer whitespace-nowrap"
+            className="flex items-center gap-2 min-w-0 flex-1 p-1.5 rounded-xl hover:bg-neutral-200/60 dark:hover:bg-neutral-800/70 transition cursor-pointer text-left"
+            title="Ayarlar ve Profil"
           >
-            <SquarePen className="w-3.5 h-3.5" />
-            <span>Sohbet</span>
+            <span className="w-7 h-7 rounded-lg bg-neutral-200 dark:bg-neutral-700 text-neutral-800 dark:text-neutral-100 text-[11px] font-bold flex items-center justify-center shrink-0 overflow-hidden">
+              {user.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt={user.name}
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                user.avatarText || 'LX'
+              )}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="text-xs font-semibold text-neutral-900 dark:text-white truncate block">
+                {user.name}
+              </span>
+              <span className="text-[10px] text-neutral-500 dark:text-neutral-400 block truncate">
+                {user.isGuest ? 'Misafir Oturumu' : user.workspaceType || 'Kişisel'}
+              </span>
+            </span>
           </button>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 shrink-0">
             {onToggleTheme && (
               <button
                 type="button"
                 data-testid="sidebar-theme-toggle-btn"
                 onClick={onToggleTheme}
-                className="w-8 h-8 rounded-full bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 flex items-center justify-center transition active:scale-95 cursor-pointer border border-neutral-200 dark:border-neutral-700 shrink-0"
+                className="w-8 h-8 rounded-lg hover:bg-neutral-200/70 dark:hover:bg-neutral-800 text-neutral-600 dark:text-neutral-300 flex items-center justify-center transition cursor-pointer"
                 aria-label={isDarkTheme ? 'Açık temaya geç' : 'Koyu temaya geç'}
                 title={isDarkTheme ? 'Açık temaya geç' : 'Koyu temaya geç'}
               >
                 {isDarkTheme ? (
                   <Sun className="w-3.5 h-3.5 text-amber-500" />
                 ) : (
-                  <Moon className="w-3.5 h-3.5 text-neutral-600" />
+                  <Moon className="w-3.5 h-3.5" />
                 )}
               </button>
             )}
-
-            <button
-              type="button"
-              data-testid="sidebar-footer-feedback-btn"
-              onClick={() => {
-                if (onOpenFeedback) {
-                  onOpenFeedback();
-                } else {
-                  onOpenSettings('feedback');
-                }
-                onClose();
-              }}
-              className="w-8 h-8 rounded-full bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/40 text-rose-600 dark:text-rose-400 flex items-center justify-center transition active:scale-95 cursor-pointer border border-rose-200/60 dark:border-rose-800/40 shrink-0"
-              aria-label="Geri Bildirim & Destek"
-              title="Geri Bildirim & Hata Bildir"
-            >
-              <MessageSquarePlus className="w-3.5 h-3.5" />
-            </button>
 
             {user.isGuest ? (
               <button
@@ -787,7 +1103,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                   onClose();
                   onOpenAuthModal();
                 }}
-                className="px-2 py-1.5 rounded-full bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-[10px] font-semibold text-neutral-800 dark:text-neutral-200 transition cursor-pointer whitespace-nowrap"
+                className="px-2.5 py-1.5 rounded-lg bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 text-[11px] font-semibold transition cursor-pointer whitespace-nowrap"
               >
                 Giriş
               </button>
@@ -802,36 +1118,12 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                   }}
                   aria-label="Oturumdan çıkış yap"
                   title="Çıkış Yap"
-                  className="px-2 py-1.5 rounded-full bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 text-[10px] font-semibold flex items-center gap-1 transition cursor-pointer whitespace-nowrap"
+                  className="w-8 h-8 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 text-neutral-500 hover:text-red-600 dark:hover:text-red-400 flex items-center justify-center transition cursor-pointer"
                 >
-                  <LogOut className="w-3 h-3" />
-                  <span>Çıkış</span>
+                  <LogOut className="w-3.5 h-3.5" />
                 </button>
               )
             )}
-
-            <button
-              type="button"
-              data-testid="sidebar-footer-settings-btn"
-              onClick={() => {
-                onOpenSettings();
-                onClose();
-              }}
-              className="w-8 h-8 rounded-full bg-neutral-200 dark:bg-neutral-700 hover:bg-neutral-300 dark:hover:bg-neutral-600 text-neutral-700 dark:text-neutral-200 text-xs font-bold flex items-center justify-center transition active:scale-95 cursor-pointer border border-neutral-300 dark:border-neutral-600 shrink-0 overflow-hidden"
-              aria-label="Ayarlar ve Profil"
-              title="Ayarlar ve Profil"
-            >
-              {user.avatarUrl ? (
-                <img
-                  src={user.avatarUrl}
-                  alt={user.name}
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                user.avatarText || 'LX'
-              )}
-            </button>
           </div>
         </div>
       </aside>
@@ -848,7 +1140,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               <div className="flex items-center gap-2">
                 <Clock className="w-5 h-5 text-blue-500" />
                 <h3 className="text-base font-bold text-neutral-900 dark:text-white">
-                  Zamanlanmış Otomasyonlar & Görevler
+                  Zamanlanmış Otomasyonlar &amp; Görevler
                 </h3>
               </div>
               <button
@@ -860,10 +1152,6 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                 <X className="w-4 h-4" />
               </button>
             </div>
-
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
-              Luxo AI&apos;ın belirlediğiniz saatlerde çalıştıracağı otomatik özet, kod inceleme ve araştırma rutinleri.
-            </p>
 
             <div className="space-y-2.5 mb-4">
               {routines.map((routine) => {
@@ -901,7 +1189,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                         className="px-2.5 py-1.5 rounded-xl bg-blue-600/10 hover:bg-blue-600/20 text-blue-600 dark:text-blue-400 text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer whitespace-nowrap"
                       >
                         <Play className="w-3 h-3" />
-                        <span>Şimdi Çalıştır</span>
+                        <span>Çalıştır</span>
                       </button>
                       <button
                         type="button"
@@ -930,7 +1218,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                   type="text"
                   value={newRoutineTitle}
                   onChange={(e) => setNewRoutineTitle(e.target.value)}
-                  placeholder="Görev adı (Örn: Günlük Yazılım & Mimari Özeti)"
+                  placeholder="Görev adı (Örn: Günlük Yazılım Özeti)"
                   required
                   className="w-full px-3 py-2 rounded-xl bg-white dark:bg-[#18181b] text-xs text-neutral-900 dark:text-white border border-neutral-200 dark:border-neutral-700 outline-none"
                 />
@@ -939,7 +1227,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                     type="text"
                     value={newRoutineTime}
                     onChange={(e) => setNewRoutineTime(e.target.value)}
-                    placeholder="Zaman (Örn: Her gün 09:00)"
+                    placeholder="Zaman (Her gün 09:00)"
                     className="px-3 py-2 rounded-xl bg-white dark:bg-[#18181b] text-xs text-neutral-900 dark:text-white border border-neutral-200 dark:border-neutral-700 outline-none"
                   />
                   <select
@@ -984,20 +1272,12 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               <button
                 type="button"
                 onClick={() => setShowNewRoutineForm(true)}
-                className="w-full py-2.5 mb-3 rounded-2xl border border-dashed border-neutral-300 dark:border-neutral-700 text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                className="w-full py-2.5 border border-dashed border-neutral-300 dark:border-neutral-700 rounded-2xl text-xs font-medium text-neutral-600 dark:text-neutral-300 hover:border-blue-500 hover:text-blue-500 transition flex items-center justify-center gap-1.5 cursor-pointer"
               >
-                <Plus className="w-4 h-4" />
-                <span>Yeni Zamanlanmış Görev Ekle</span>
+                <Plus className="w-3.5 h-3.5" />
+                <span>Yeni Otomatik Görev Oluştur</span>
               </button>
             )}
-
-            <button
-              type="button"
-              onClick={() => setShowScheduledModal(false)}
-              className="w-full py-2.5 text-xs font-semibold bg-neutral-900 dark:bg-white text-white dark:text-black rounded-full hover:opacity-90 transition cursor-pointer"
-            >
-              Tamam
-            </button>
           </div>
         </div>
       )}

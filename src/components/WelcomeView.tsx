@@ -63,24 +63,40 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-neutral-500 dark:text-neutral-400 tabular-nums">
-            <span className="font-semibold text-neutral-800 dark:text-neutral-200">
-              {modelCount} Seçilebilir Yapay Zeka
-            </span>
-            <span aria-hidden="true">·</span>
-            <span>Kısa ve Öz Yanıt Mimarisi</span>
-            <span aria-hidden="true">·</span>
-            <span>Nano Banana 4K & Google Veo</span>
-            <span aria-hidden="true">·</span>
-            <span>10 Nöral Ses</span>
+          <div className="flex flex-wrap items-center gap-2 pt-1" aria-label="Desteklenen Yapay Zeka Markaları">
+            {(
+              [
+                { name: 'Gemini', logo: '/logos/gemini.svg' },
+                { name: 'ChatGPT', logo: '/logos/openai.svg' },
+                { name: 'Claude', logo: '/logos/claude.svg' },
+                { name: 'DeepSeek', logo: '/logos/deepseek.svg' },
+                { name: 'Grok', logo: '/logos/grok.svg' },
+                { name: 'Meta', logo: '/logos/meta.svg' },
+                { name: 'Mistral', logo: '/logos/mistral.svg' },
+                { name: 'Qwen', logo: '/logos/qwen.svg' },
+                { name: 'Perplexity', logo: '/logos/perplexity.svg' },
+              ] as const
+            ).map((brand) => (
+              <span
+                key={brand.name}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-neutral-200/80 dark:border-neutral-800 bg-neutral-50/70 dark:bg-[#202123] text-[11px] font-semibold text-neutral-700 dark:text-neutral-300"
+              >
+                <img
+                  src={brand.logo}
+                  alt={`${brand.name} logosu`}
+                  className="w-4 h-4 rounded-sm object-contain shrink-0"
+                />
+                <span>{brand.name}</span>
+              </span>
+            ))}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full pt-1">
             <div className="p-4 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-[#202123] space-y-1.5">
               <Columns2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-              <div className="text-xs font-bold text-neutral-900 dark:text-white">
+              <h2 className="text-xs font-bold text-neutral-900 dark:text-white">
                 Yan Yana Karşılaştırma
-              </div>
+              </h2>
               <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-snug">
                 İki farklı yapay zeka modelini aynı soruda eşzamanlı yarıştırın ve sentezleyin.
               </p>
@@ -88,9 +104,9 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({
 
             <div className="p-4 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-[#202123] space-y-1.5">
               <Video className="w-4 h-4 text-amber-500" />
-              <div className="text-xs font-bold text-neutral-900 dark:text-white">
+              <h2 className="text-xs font-bold text-neutral-900 dark:text-white">
                 4K 60fps Görsel & Video
-              </div>
+              </h2>
               <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-snug">
                 Nano Banana 2.1 Ultra ve Google Veo ile yüksek sadakatli görsel ve sesli MP4 üretin.
               </p>
@@ -98,9 +114,9 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({
 
             <div className="p-4 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-[#202123] space-y-1.5">
               <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              <div className="text-xs font-bold text-neutral-900 dark:text-white">
+              <h2 className="text-xs font-bold text-neutral-900 dark:text-white">
                 Canlı Ortak Çalışma
-              </div>
+              </h2>
               <p className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-snug">
                 Oda bağlantısıyla ekibinizle aynı anda sohbet ve ortak belge düzenleyin.
               </p>

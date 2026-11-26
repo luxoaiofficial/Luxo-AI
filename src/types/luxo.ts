@@ -191,10 +191,87 @@ export interface CinematicMotionParams {
   tilt: number; // -90 to +90 degrees
 }
 
+export type AiProviderId =
+  | 'google'
+  | 'openai'
+  | 'anthropic'
+  | 'deepseek'
+  | 'xai'
+  | 'mistral'
+  | 'perplexity'
+  | 'qwen'
+  | 'openrouter'
+  | 'groq'
+  | 'cerebras'
+  | 'nvidia'
+  | 'cloudflare'
+  | 'sambanova'
+  | 'cohere'
+  | 'huggingface'
+  | 'global'
+  | 'media'
+  | 'luxo'
+  | string;
+
+export interface ProviderConnectionStatusMap {
+  google: boolean;
+  openai: boolean;
+  anthropic: boolean;
+  deepseek: boolean;
+  xai: boolean;
+  mistral: boolean;
+  perplexity: boolean;
+  qwen: boolean;
+  openrouter: boolean;
+  groq?: boolean;
+  cerebras?: boolean;
+  nvidia?: boolean;
+  cloudflare?: boolean;
+  sambanova?: boolean;
+  cohere?: boolean;
+  huggingface?: boolean;
+  [customProviderId: string]: boolean | undefined;
+}
+
+export interface ProviderStatusResponse {
+  ok: boolean;
+  providers: ProviderConnectionStatusMap;
+  activeProviderCount: number;
+  unlockedModelIds: LuxoModelId[];
+  lockedModelCount: number;
+  totalModelCount: number;
+  zeroCostModeEnabled?: boolean;
+}
+
+export interface TokenUsageMetadata {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  maxOutputTokens: number;
+  contextLimitTokens: number;
+  provider: AiProviderId;
+  estimated?: boolean;
+  latencyMs?: number;
+}
+
+export interface ModelTokenLimitOverride {
+  maxOutputTokens?: number;
+  dailyTokenLimit?: number;
+}
+
+export interface DailyModelTokenUsage {
+  date: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  requestCount: number;
+}
+
 export interface LuxoModelConfig {
   id: LuxoModelId;
   name: string;
   category: LuxoModelCategory;
+  provider: AiProviderId;
   sdkBackend: string;
   allowGuest?: boolean;
   tagline: string;
@@ -206,6 +283,9 @@ export interface LuxoModelConfig {
   thinkingLevel: 'LOW' | 'MEDIUM' | 'HIGH';
   tier: 'free' | 'go' | 'plus';
   contextWindow: string;
+  maxInputTokens: number;
+  maxOutputTokens: number;
+  defaultDailyTokenLimit: number;
   capabilities: string[];
   systemInstruction: string;
   logoUrl?: string;
@@ -279,6 +359,7 @@ export interface ComparisonModelResponse {
   thinkingSteps?: string[];
   citations?: CitationItem[];
   latencyMs?: number;
+  tokenUsage?: TokenUsageMetadata;
   isStreaming?: boolean;
 }
 
@@ -293,6 +374,7 @@ export interface ChatMessage {
   thinkingSteps?: string[];
   citations?: CitationItem[];
   followUpSuggestions?: string[];
+  tokenUsage?: TokenUsageMetadata;
   comparisonResponses?: ComparisonModelResponse[];
   preferredComparisonModelId?: LuxoModelId;
   imageUrl?: string;
@@ -549,7 +631,14 @@ export interface CodeSnapshot {
 }
 
 export type PinnedWorkspaceId =
+  | 'home'
   | 'chat'
+  | 'models'
+  | 'arena'
+  | 'assistants'
+  | 'knowledge'
+  | 'prompts'
+  | 'workflows'
   | 'studio'
   | 'images'
   | 'projects'
@@ -558,9 +647,18 @@ export type PinnedWorkspaceId =
   | 'model-metrics'
   | 'evolution'
   | 'social'
+  | 'admin'
   | 'settings';
 
 export type AppView =
+  | 'home'
+  | 'models'
+  | 'arena'
+  | 'assistants'
+  | 'knowledge'
+  | 'prompts'
+  | 'workflows'
+  | 'admin'
   | 'welcome'
   | 'dashboard'
   | 'chat'
@@ -572,3 +670,181 @@ export type AppView =
   | 'library'
   | 'projects'
   | 'settings';
+
+export type ModelPricingTierStatus =
+  | 'FREE'
+  | 'FREE_TIER'
+  | 'PAID'
+  | 'REQUIRES_CREDITS'
+  | 'UNKNOWN'
+  | 'UNAVAILABLE';
+
+export type ProviderAdapterKind =
+  | 'gemini'
+  | 'openai-compatible'
+  | 'anthropic-compatible';
+
+export interface PlatformProviderConfig {
+  id: string;
+  name: string;
+  shortLabel: string;
+  adapter: ProviderAdapterKind;
+  baseUrl: string;
+  secretEnvName: string;
+  secondaryEnvName?: string;
+  modelsEndpoint?: string;
+  logoKey: string;
+  accentColor: string;
+  supportsStreaming: boolean;
+  supportsVision: boolean;
+  supportsDiscovery: boolean;
+  isBuiltin: boolean;
+  enabled: boolean;
+  connected: boolean;
+  notes?: string;
+}
+
+export interface CatalogModelEntry {
+  id: string;
+  name: string;
+  providerId: string;
+  providerLabel: string;
+  upstreamModelId: string;
+  openRouterModelId?: string;
+  adapter: ProviderAdapterKind;
+  pricingStatus: ModelPricingTierStatus;
+  pricingNote?: string;
+  contextLength: number;
+  maxOutputTokens: number;
+  capabilities: string[];
+  description: string;
+  logoPath: string;
+  accentColor: string;
+  enabled: boolean;
+  isCustom?: boolean;
+  isDiscovered?: boolean;
+  discoveredAt?: number;
+  addedAt?: number;
+  category: string;
+  tier: 'free' | 'go' | 'plus';
+  executable: boolean;
+  zeroCostAllowed: boolean;
+  zeroCostReason?: string;
+}
+
+export interface DiscoveredModelCandidate {
+  id: string;
+  upstreamModelId: string;
+  providerId: string;
+  providerLabel: string;
+  displayName: string;
+  contextLength: number;
+  maxOutputTokens: number;
+  capabilities: string[];
+  pricingStatus: ModelPricingTierStatus;
+  pricingDetail: string;
+  logoKey: string;
+  discoveredAt: number;
+  status: 'pending' | 'approved' | 'rejected' | 'removed';
+}
+
+export interface DiscoveryRunLog {
+  id: string;
+  timestamp: number;
+  providerId: string;
+  scannedCount: number;
+  newCandidatesCount: number;
+  removedCount: number;
+  status: 'ok' | 'skipped' | 'error';
+  message: string;
+}
+
+export interface AssistantPersona {
+  id: string;
+  name: string;
+  role: string;
+  description: string;
+  systemPrompt: string;
+  defaultModelId: string;
+  temperature: number;
+  capabilities: string[];
+  knowledgeDocIds: string[];
+  category: string;
+  isFeatured?: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PromptTemplateRecord {
+  id: string;
+  title: string;
+  category: 'Coding' | 'Writing' | 'Research' | 'Analysis' | 'Design' | 'General';
+  content: string;
+  description: string;
+  recommendedModelId?: string;
+  isFavorite?: boolean;
+  usageCount: number;
+  createdAt: number;
+}
+
+export interface WorkflowStepDef {
+  id: string;
+  title: string;
+  instruction: string;
+  modelId: string;
+  usePreviousOutput: boolean;
+}
+
+export interface WorkflowDefinition {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  steps: WorkflowStepDef[];
+  lastRunAt?: number;
+  lastRunOutput?: string;
+  createdAt: number;
+}
+
+export interface KnowledgeDocSummary {
+  id: string;
+  title: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  chunkCount: number;
+  embeddingMode: 'gemini-embedding-2' | 'lexical-fallback';
+  projectId?: string;
+  previewText: string;
+  createdAt: number;
+}
+
+export interface ArenaComparisonRun {
+  id: string;
+  prompt: string;
+  modelIds: string[];
+  responses: {
+    modelId: string;
+    modelName: string;
+    providerId: string;
+    logoPath: string;
+    content: string;
+    latencyMs: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    error?: string;
+  }[];
+  winnerModelId?: string;
+  createdAt: number;
+}
+
+export interface AdminAuditEntry {
+  id: string;
+  timestamp: number;
+  actorUid: string;
+  actorEmail: string;
+  action: string;
+  target: string;
+  detail: string;
+}
+

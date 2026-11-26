@@ -901,7 +901,7 @@ test('All 122 models support precision tuning options and verifyAndRepairModelOu
   assert.ok(repaired.endsWith('```'));
 });
 
-test('Public open chat models include all 13 requested flagship AIs for guests while extended 109 models require catalog password in Settings', () => {
+test('All 122 models are statically locked by default with full token limits while preserving 13 open chat entries & 109 catalog entries', () => {
   assert.equal(PUBLIC_CHAT_MODEL_IDS.length, 13);
   assert.equal(EXTENDED_CATALOG_MODEL_IDS.length, 109);
   assert.equal(
@@ -915,27 +915,33 @@ test('Public open chat models include all 13 requested flagship AIs for guests w
     isUnlockedDevHelper: false,
   };
 
+  for (const id of LUXO_MODEL_IDS) {
+    assert.equal(LUXO_MODELS[id].isLocked, true, `Model ${id} must default to locked`);
+    assert.ok(LUXO_MODELS[id].maxOutputTokens >= 4096);
+    assert.ok(LUXO_MODELS[id].maxInputTokens >= 128000);
+    assert.ok(LUXO_MODELS[id].defaultDailyTokenLimit >= 100000);
+  }
+
   for (const openId of [
-    'claude-5-2-fable',
-    'claude-5-5-opus',
-    'claude-5-5-haiku',
-    'claude-5-5-sonnet',
-    'gpt-astra',
-    'luxo-sol',
+    'gemini-3-1-flash-lite',
+    'gemini-4-hydrogen',
+    'gemini-4-carbon',
+    'gemini-flash-latest',
+    'luxo-auto-router',
+    'luxo-flash',
     'luxo-luna',
     'chatgpt-5-2-pro',
     'chatgpt-5-omni',
-    'gemini-4-carbon',
-    'gemini-4-argon',
-    'gemini-4-neon',
-    'gemini-4-hydrogen',
+    'gpt-astra',
+    'claude-5-5-opus',
+    'claude-5-5-sonnet',
+    'claude-5-2-fable',
   ] as const) {
     assert.ok(
       PUBLIC_CHAT_MODEL_IDS.includes(openId),
       `Open chat list must include ${openId}`
     );
     assert.deepEqual(canAccessModel(openId, guestUser), { allowed: true });
-    assert.equal(LUXO_MODELS[openId].isLocked, false);
   }
 
   assert.equal(LUXO_MODELS['gpt-astra']?.name, 'GPT-Astra');
@@ -943,8 +949,6 @@ test('Public open chat models include all 13 requested flagship AIs for guests w
   assert.equal(LUXO_MODELS['claude-5-5-opus']?.name, 'Claude Opus 5.5');
   assert.equal(LUXO_MODELS['claude-5-5-sonnet']?.name, 'Claude Sonnet 5.5');
   assert.equal(LUXO_MODELS['claude-5-5-haiku']?.name, 'Claude Haiku 5.5');
-  assert.equal(LUXO_MODELS['luxo-sol']?.name, 'Sol');
-  assert.equal(LUXO_MODELS['luxo-luna']?.name, 'Luna');
 
   const defaultList = getSelectableChatModelIds('gemini-4-carbon', false);
   assert.equal(defaultList.length, 13);
@@ -962,13 +966,13 @@ test('Public open chat models include all 13 requested flagship AIs for guests w
   assert.equal(validateModelCatalogPassword(''), false);
 });
 
-test('scoreAutoRouterModel weighs user reasoningLevel & codeStrictness preferences before defaulting to Gemini 4', () => {
+test('scoreAutoRouterModel weighs user reasoningLevel & codeStrictness preferences using healthy live targets', () => {
   const fastDecision = scoreAutoRouterModel({
     prompt: 'Merhaba, bugün üretkenliğimizi nasıl hızlandırabiliriz?',
     reasoningLevel: 'fast',
     codeStrictness: 'production',
   });
-  assert.equal(fastDecision.targetModelId, 'gemini-4-neon');
+  assert.equal(fastDecision.targetModelId, 'gemini-3-1-flash-lite');
 
   const deepCodeDecision = scoreAutoRouterModel({
     prompt: 'TypeScript API fonksiyonu ve güvenlik hatası analizi yaz',

@@ -27,6 +27,10 @@ service cloud.firestore {
       return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidModelId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9._:/-]+$');
+    }
+
     function incoming() {
       return request.resource.data;
     }
@@ -342,131 +346,7 @@ service cloud.firestore {
         && isValidId(data.ownerId)
         && isValidId(data.chatId)
         && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
-        && data.modelId is string && data.modelId.size() <= 40
-        && data.modelId in [
-          'gemini-4-argon',
-          'gemini-4-hydrogen',
-          'gemini-4-carbon',
-          'gemini-4-neon',
-          'gemini-4-ultra',
-          'gemini-4-pro-code',
-          'gemini-3-8-pro',
-          'gemini-3-8-flash',
-          'gemini-3-8-live-think',
-          'gemini-3-1-pro',
-          'gemini-3-1-flash-lite',
-          'gemini-flash-latest',
-          'gemini-omni-flash',
-          'antigravity-agent',
-          'deep-research-agent',
-          'deep-research-max',
-          'gemini-transcribe',
-          'gemma-open-27b',
-          'gemma-3-12b',
-          'chatgpt-5-2-pro',
-          'gpt-image-2-ultra',
-          'chatgpt-5-omni',
-          'gpt-5-pro',
-          'chatgpt-5-mini',
-          'gpt-4-5-orion',
-          'gpt-4-1',
-          'gpt-4-1-mini',
-          'gpt-4-1-nano',
-          'gpt-4o',
-          'gpt-4o-mini',
-          'openai-o4-pro',
-          'chatgpt-o3-pro',
-          'openai-o3',
-          'openai-o4-mini',
-          'openai-o1-pro',
-          'openai-codex-agent',
-          'gpt-astra',
-          'claude-5-2-fable',
-          'claude-5-5-opus',
-          'claude-5-5-sonnet',
-          'claude-5-5-haiku',
-          'claude-4-6-opus',
-          'claude-4-5-sonnet',
-          'claude-4-opus',
-          'claude-4-sonnet',
-          'claude-4-haiku',
-          'claude-3-7-sonnet',
-          'claude-3-5-sonnet',
-          'claude-3-5-haiku',
-          'claude-3-opus',
-          'deepseek-v3-2-exp',
-          'deepseek-r2',
-          'deepseek-v3-1',
-          'deepseek-r1',
-          'deepseek-r1-zero',
-          'deepseek-v3-turbo',
-          'deepseek-coder-v3',
-          'deepseek-math-v2',
-          'deepseek-prover-v2',
-          'grok-4-heavy',
-          'grok-3-ultra',
-          'grok-3-thinking',
-          'grok-3-mini',
-          'grok-2-vision',
-          'llama-4-behemoth',
-          'llama-4-reasoning',
-          'llama-4-maverick',
-          'llama-4-scout',
-          'llama-3-3-70b',
-          'mistral-large-2',
-          'mistral-medium-3',
-          'mistral-saba',
-          'codestral-25',
-          'pixtral-large',
-          'magistral-reasoning',
-          'qwen-3-max',
-          'qwen-3-coder-plus',
-          'qwen-3-thinking',
-          'qwen-2-5-coder',
-          'qwq-32b',
-          'qwen-vl-max',
-          'qwen-image-edit-pro',
-          'nano-banana-2-1-ultra',
-          'nano-banana-pro-4k',
-          'imagen-4-ultra',
-          'flux-1-1-pro-ultra',
-          'veo-3-1-ultra-cinema',
-          'veo-3-cinema-pro',
-          'wan-2-2-cinema-ultra',
-          'kling-2-5-turbo',
-          'higgsfield-cinema',
-          'higgsfield-dop-turbo',
-          'sora-veo-director',
-          'runway-gen-4',
-          'kling-2-master',
-          'seedance-1-pro',
-          'hailuo-minimax-video',
-          'luma-ray-2',
-          'pika-2-2-studio',
-          'midjourney-v7-art',
-          'perplexity-sonar-pro',
-          'perplexity-reasoning',
-          'perplexity-research',
-          'kimi-k2-thinking',
-          'kimi-k1-5',
-          'cohere-command-a',
-          'cohere-command-r-plus',
-          'microsoft-phi-4',
-          'amazon-nova-premier',
-          'nvidia-nemotron-ultra',
-          'glm-4-plus',
-          'minimax-01',
-          'yi-lightning',
-          'luxo-auto-router',
-          'luxo-flash',
-          'luxo-ultra',
-          'luxo-argon',
-          'luxo-quantum-math',
-          'luxo-sol',
-          'luxo-luna',
-          'luxo-dev-helper',
-          'luxo-dev'
-        ]
+        && isValidModelId(data.modelId)
         && data.lastUserPrompt is string && data.lastUserPrompt.size() <= 4000
         && data.lastAssistantReply is string && data.lastAssistantReply.size() <= 8000
         && data.messageCount is number && data.messageCount >= 0 && data.messageCount <= 10000
@@ -549,11 +429,137 @@ service cloud.firestore {
         && data.itemType is string && data.itemType.size() <= 24 && data.itemType in ['assistant', 'prompt', 'knowledge', 'workflow', 'integration']
         && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
         && data.category is string && data.category.size() >= 1 && data.category.size() <= 60
-        && data.modelId is string && data.modelId.size() >= 1 && data.modelId.size() <= 40
+        && isValidModelId(data.modelId)
         && data.content is string && data.content.size() <= 4000
         && data.isEnabled is bool
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
+    }
+
+    function isValidProjectV2Record(data) {
+      return data.keys().hasAll([
+          'projectId', 'ownerId', 'name', 'description', 'category', 'systemPrompt', 'color', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'projectId', 'ownerId', 'name', 'description', 'category', 'systemPrompt', 'color', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == request.auth.uid
+        && isValidId(data.ownerId)
+        && isValidId(data.projectId)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.description is string && data.description.size() <= 500
+        && data.category is string && data.category.size() >= 1 && data.category.size() <= 60
+        && data.systemPrompt is string && data.systemPrompt.size() <= 4000
+        && data.color is string && data.color.size() >= 4 && data.color.size() <= 24
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidKnowledgeDocRecord(data) {
+      return data.keys().hasAll([
+          'docId', 'ownerId', 'title', 'fileName', 'mimeType', 'chunkCount', 'embeddingMode', 'previewText', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'docId', 'ownerId', 'title', 'fileName', 'mimeType', 'chunkCount', 'embeddingMode', 'previewText', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == request.auth.uid
+        && isValidId(data.ownerId)
+        && isValidId(data.docId)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 140
+        && data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 140
+        && data.mimeType is string && data.mimeType.size() >= 1 && data.mimeType.size() <= 80
+        && data.chunkCount is number && data.chunkCount >= 0 && data.chunkCount <= 500
+        && data.embeddingMode is string && data.embeddingMode.size() <= 32 && data.embeddingMode in ['gemini-embedding-2', 'lexical-fallback']
+        && data.previewText is string && data.previewText.size() <= 1000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidArenaHistoryRecord(data) {
+      return data.keys().hasAll([
+          'arenaId', 'ownerId', 'prompt', 'modelIds', 'summaryText', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'arenaId', 'ownerId', 'prompt', 'modelIds', 'winnerModelId', 'summaryText', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == request.auth.uid
+        && isValidId(data.ownerId)
+        && isValidId(data.arenaId)
+        && data.prompt is string && data.prompt.size() >= 1 && data.prompt.size() <= 4000
+        && data.modelIds is list && data.modelIds.size() >= 2 && data.modelIds.size() <= 4
+        && isValidModelId(data.modelIds[0])
+        && (!('winnerModelId' in data) || isValidModelId(data.winnerModelId))
+        && data.summaryText is string && data.summaryText.size() <= 6000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAiProviderDoc(data) {
+      return data.keys().hasAll([
+          'providerId', 'name', 'adapter', 'baseUrl', 'secretEnvName', 'enabled', 'updatedBy', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'providerId', 'name', 'adapter', 'baseUrl', 'secretEnvName', 'enabled', 'updatedBy', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.providerId)
+        && isValidId(data.updatedBy)
+        && data.updatedBy == request.auth.uid
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.adapter is string && data.adapter.size() <= 32 && data.adapter in ['gemini', 'openai-compatible', 'anthropic-compatible']
+        && data.baseUrl is string && data.baseUrl.size() >= 8 && data.baseUrl.size() <= 240
+        && data.secretEnvName is string && data.secretEnvName.size() >= 2 && data.secretEnvName.size() <= 64 && data.secretEnvName.matches('^[A-Z][A-Z0-9_]+$')
+        && data.enabled is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAiModelDoc(data) {
+      return data.keys().hasAll([
+          'modelDocId', 'modelId', 'name', 'providerId', 'pricingStatus', 'enabled', 'updatedBy', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'modelDocId', 'modelId', 'name', 'providerId', 'pricingStatus', 'enabled', 'updatedBy', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.modelDocId)
+        && isValidModelId(data.modelId)
+        && isValidId(data.updatedBy)
+        && data.updatedBy == request.auth.uid
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.providerId is string && data.providerId.size() >= 1 && data.providerId.size() <= 64
+        && data.pricingStatus is string && data.pricingStatus.size() <= 24 && data.pricingStatus in ['FREE', 'FREE_TIER', 'PAID', 'REQUIRES_CREDITS', 'UNKNOWN', 'UNAVAILABLE']
+        && data.enabled is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidDiscoveryLogDoc(data) {
+      return data.keys().hasAll([
+          'logId', 'providerId', 'scannedCount', 'newCandidatesCount', 'status', 'message', 'actorUid', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'logId', 'providerId', 'scannedCount', 'newCandidatesCount', 'status', 'message', 'actorUid', 'createdAt'
+        ])
+        && isValidId(data.logId)
+        && isValidId(data.actorUid)
+        && data.actorUid == request.auth.uid
+        && data.providerId is string && data.providerId.size() >= 1 && data.providerId.size() <= 64
+        && data.scannedCount is number && data.scannedCount >= 0 && data.scannedCount <= 10000
+        && data.newCandidatesCount is number && data.newCandidatesCount >= 0 && data.newCandidatesCount <= 10000
+        && data.status is string && data.status.size() <= 16 && data.status in ['ok', 'skipped', 'error']
+        && data.message is string && data.message.size() <= 400
+        && data.createdAt is timestamp;
+    }
+
+    function isValidAuditLogDoc(data) {
+      return data.keys().hasAll(['auditId', 'actorUid', 'action', 'target', 'detail', 'createdAt'])
+        && data.keys().hasOnly(['auditId', 'actorUid', 'action', 'target', 'detail', 'createdAt'])
+        && isValidId(data.auditId)
+        && isValidId(data.actorUid)
+        && data.actorUid == request.auth.uid
+        && data.action is string && data.action.size() >= 1 && data.action.size() <= 80
+        && data.target is string && data.target.size() >= 1 && data.target.size() <= 120
+        && data.detail is string && data.detail.size() <= 400
+        && data.createdAt is timestamp;
     }
 
     // 0. Trusted Admin Registry (/admins/{adminId})
@@ -862,6 +868,141 @@ service cloud.firestore {
           && exists(/databases/$(database)/documents/users/$(userId))
           && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
       }
+
+      // 5b. User V2 Projects Subcollection (/users/{userId}/projects/{projectId})
+      match /projects/{projectId} {
+        allow get: if isSignedIn()
+          && isValidId(userId)
+          && isValidId(projectId)
+          && userId == request.auth.uid
+          && (resource == null || existing().ownerId == request.auth.uid)
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+
+        allow list: if isSignedIn()
+          && userId == request.auth.uid
+          && resource.data.ownerId == request.auth.uid;
+
+        allow create: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(projectId)
+          && userId == request.auth.uid
+          && isValidProjectV2Record(incoming())
+          && incoming().projectId == projectId
+          && incoming().ownerId == userId
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+
+        allow update: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(projectId)
+          && userId == request.auth.uid
+          && isValidProjectV2Record(incoming())
+          && existing().ownerId == request.auth.uid
+          && incoming().projectId == existing().projectId
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'category', 'systemPrompt', 'color', 'updatedAt'])
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+
+        allow delete: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(projectId)
+          && userId == request.auth.uid
+          && existing().ownerId == request.auth.uid
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+      }
+
+      // 5c. User Knowledge Documents Subcollection (/users/{userId}/documents/{docId})
+      match /documents/{docId} {
+        allow get: if isSignedIn()
+          && isValidId(userId)
+          && isValidId(docId)
+          && userId == request.auth.uid
+          && (resource == null || existing().ownerId == request.auth.uid)
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+
+        allow list: if isSignedIn()
+          && userId == request.auth.uid
+          && resource.data.ownerId == request.auth.uid;
+
+        allow create: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(docId)
+          && userId == request.auth.uid
+          && isValidKnowledgeDocRecord(incoming())
+          && incoming().docId == docId
+          && incoming().ownerId == userId
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+
+        allow update: if false;
+
+        allow delete: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(docId)
+          && userId == request.auth.uid
+          && existing().ownerId == request.auth.uid
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+      }
+
+      // 5d. User Model Arena History Subcollection (/users/{userId}/arenaHistory/{arenaId})
+      match /arenaHistory/{arenaId} {
+        allow get: if isSignedIn()
+          && isValidId(userId)
+          && isValidId(arenaId)
+          && userId == request.auth.uid
+          && (resource == null || existing().ownerId == request.auth.uid)
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+
+        allow list: if isSignedIn()
+          && userId == request.auth.uid
+          && resource.data.ownerId == request.auth.uid;
+
+        allow create: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(arenaId)
+          && userId == request.auth.uid
+          && isValidArenaHistoryRecord(incoming())
+          && incoming().arenaId == arenaId
+          && incoming().ownerId == userId
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+
+        allow update: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(arenaId)
+          && userId == request.auth.uid
+          && isValidArenaHistoryRecord(incoming())
+          && existing().ownerId == request.auth.uid
+          && incoming().arenaId == existing().arenaId
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['winnerModelId', 'updatedAt'])
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+
+        allow delete: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(arenaId)
+          && userId == request.auth.uid
+          && existing().ownerId == request.auth.uid
+          && exists(/databases/$(database)/documents/users/$(userId))
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+      }
     }
 
     // 5. Public Social Profiles Collection (/publicProfiles/{userId}) - Split Collection (Zero PII)
@@ -1105,6 +1246,71 @@ service cloud.firestore {
         );
 
       allow delete: if false;
+    }
+
+    // 11. Admin AI Providers Registry (/ai_providers/{providerId})
+    match /ai_providers/{providerId} {
+      allow get: if isAdmin() && isValidId(providerId);
+      allow list: if isAdmin();
+      allow create: if isAdmin()
+        && isValidId(providerId)
+        && isValidAiProviderDoc(incoming())
+        && incoming().providerId == providerId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(providerId)
+        && isValidAiProviderDoc(incoming())
+        && incoming().providerId == existing().providerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'adapter', 'baseUrl', 'secretEnvName', 'enabled', 'updatedBy', 'updatedAt']);
+      allow delete: if isAdmin() && isValidId(providerId);
+    }
+
+    // 12. Admin AI Models Registry (/ai_models/{modelId})
+    match /ai_models/{modelId} {
+      allow get: if isAdmin() && isValidId(modelId);
+      allow list: if isAdmin();
+      allow create: if isAdmin()
+        && isValidId(modelId)
+        && isValidAiModelDoc(incoming())
+        && incoming().modelDocId == modelId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(modelId)
+        && isValidAiModelDoc(incoming())
+        && incoming().modelDocId == existing().modelDocId
+        && incoming().modelId == existing().modelId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'providerId', 'pricingStatus', 'enabled', 'updatedBy', 'updatedAt']);
+      allow delete: if isAdmin() && isValidId(modelId);
+    }
+
+    // 13. Admin Discovery Logs (/discovery_logs/{logId})
+    match /discovery_logs/{logId} {
+      allow get: if isAdmin() && isValidId(logId);
+      allow list: if isAdmin();
+      allow create: if isAdmin()
+        && isValidId(logId)
+        && isValidDiscoveryLogDoc(incoming())
+        && incoming().logId == logId
+        && incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // 14. Admin Audit Logs (/audit_logs/{auditId})
+    match /audit_logs/{auditId} {
+      allow get: if isAdmin() && isValidId(auditId);
+      allow list: if isAdmin();
+      allow create: if isAdmin()
+        && isValidId(auditId)
+        && isValidAuditLogDoc(incoming())
+        && incoming().auditId == auditId
+        && incoming().createdAt == request.time;
+      allow update, delete: if false;
     }
   }
 }

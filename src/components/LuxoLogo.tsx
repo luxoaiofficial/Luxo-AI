@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { Check, Code, Copy } from 'lucide-react';
 import { cleanAssistantResponse, parseMarkdownBlocks } from '../utils/luxoLogic';
+import { resolveLogoForEntity } from '../utils/logoRegistry';
 
 export const LuxoLogo: React.FC<{ className?: string; size?: number }> = ({
-  className = 'w-16 h-16 text-black dark:text-white',
+  className = 'w-16 h-16 text-slate-900 dark:text-white',
   size = 64,
 }) => (
   <svg
@@ -68,26 +69,45 @@ export const LuxoLogo: React.FC<{ className?: string; size?: number }> = ({
 export const ModelBrandAvatar: React.FC<{
   name: string;
   logoUrl?: string;
+  provider?: string;
+  modelId?: string;
+  logoKey?: string;
   accentColor?: string;
   sizeClass?: string;
   imgClass?: string;
 }> = ({
   name,
   logoUrl,
-  accentColor = '#2563eb',
+  provider,
+  modelId,
+  logoKey,
+  accentColor,
   sizeClass = 'w-6 h-6 rounded-lg',
-  imgClass = 'w-full h-full object-contain',
+  imgClass = 'w-full h-full object-contain p-0.5',
 }) => {
   const [imgFailed, setImgFailed] = useState(false);
+  const resolvedEntry = resolveLogoForEntity({ provider, modelId, logoKey });
+  const src = logoUrl || resolvedEntry.logoPath;
+  const bgFallback = accentColor || resolvedEntry.accentColor || '#7c3aed';
+  const glyph =
+    resolvedEntry.fallbackGlyph ||
+    name
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((w) => w[0] || '')
+      .join('')
+      .toUpperCase() ||
+    'AI';
 
-  if (logoUrl && !imgFailed) {
+  if (src && !imgFailed) {
     return (
       <span
-        className={`${sizeClass} inline-flex items-center justify-center overflow-hidden bg-white dark:bg-neutral-900 border border-neutral-200/80 dark:border-neutral-700/80 shrink-0 shadow-xs`}
+        className={`${sizeClass} inline-flex items-center justify-center overflow-hidden bg-white dark:bg-[#181c2b] border border-slate-200/80 dark:border-slate-800 shrink-0`}
       >
         <img
-          src={logoUrl}
-          alt={`${name} logosu`}
+          src={src}
+          alt={resolvedEntry.alt || `${name} logo`}
+          referrerPolicy="no-referrer"
           onError={() => setImgFailed(true)}
           className={imgClass}
           loading="lazy"
@@ -98,10 +118,11 @@ export const ModelBrandAvatar: React.FC<{
 
   return (
     <span
-      className={`${sizeClass} inline-flex items-center justify-center text-white shrink-0 shadow-xs`}
-      style={{ backgroundColor: accentColor }}
+      className={`${sizeClass} inline-flex items-center justify-center text-white font-semibold text-[10px] tracking-tight shrink-0`}
+      style={{ backgroundColor: bgFallback }}
+      aria-label={name}
     >
-      <LuxoLogo className="w-3/5 h-3/5 text-white" size={16} />
+      {glyph}
     </span>
   );
 };

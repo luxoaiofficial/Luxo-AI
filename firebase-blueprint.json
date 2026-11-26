@@ -591,132 +591,10 @@
         },
         "modelId": {
           "type": "string",
-          "description": "Active Luxo AI model ID.",
-          "enum": [
-            "gemini-4-argon",
-            "gemini-4-hydrogen",
-            "gemini-4-carbon",
-            "gemini-4-neon",
-            "gemini-4-ultra",
-            "gemini-4-pro-code",
-            "gemini-3-8-pro",
-            "gemini-3-8-flash",
-            "gemini-3-8-live-think",
-            "gemini-3-1-pro",
-            "gemini-3-1-flash-lite",
-            "gemini-flash-latest",
-            "gemini-omni-flash",
-            "antigravity-agent",
-            "deep-research-agent",
-            "deep-research-max",
-            "gemini-transcribe",
-            "gemma-open-27b",
-            "gemma-3-12b",
-            "chatgpt-5-2-pro",
-            "gpt-image-2-ultra",
-            "chatgpt-5-omni",
-            "gpt-5-pro",
-            "chatgpt-5-mini",
-            "gpt-4-5-orion",
-            "gpt-4-1",
-            "gpt-4-1-mini",
-            "gpt-4-1-nano",
-            "gpt-4o",
-            "gpt-4o-mini",
-            "openai-o4-pro",
-            "chatgpt-o3-pro",
-            "openai-o3",
-            "openai-o4-mini",
-            "openai-o1-pro",
-            "openai-codex-agent",
-            "gpt-astra",
-            "claude-5-2-fable",
-            "claude-5-5-opus",
-            "claude-5-5-sonnet",
-            "claude-5-5-haiku",
-            "claude-4-6-opus",
-            "claude-4-5-sonnet",
-            "claude-4-opus",
-            "claude-4-sonnet",
-            "claude-4-haiku",
-            "claude-3-7-sonnet",
-            "claude-3-5-sonnet",
-            "claude-3-5-haiku",
-            "claude-3-opus",
-            "deepseek-v3-2-exp",
-            "deepseek-r2",
-            "deepseek-v3-1",
-            "deepseek-r1",
-            "deepseek-r1-zero",
-            "deepseek-v3-turbo",
-            "deepseek-coder-v3",
-            "deepseek-math-v2",
-            "deepseek-prover-v2",
-            "grok-4-heavy",
-            "grok-3-ultra",
-            "grok-3-thinking",
-            "grok-3-mini",
-            "grok-2-vision",
-            "llama-4-behemoth",
-            "llama-4-reasoning",
-            "llama-4-maverick",
-            "llama-4-scout",
-            "llama-3-3-70b",
-            "mistral-large-2",
-            "mistral-medium-3",
-            "mistral-saba",
-            "codestral-25",
-            "pixtral-large",
-            "magistral-reasoning",
-            "qwen-3-max",
-            "qwen-3-coder-plus",
-            "qwen-3-thinking",
-            "qwen-2-5-coder",
-            "qwq-32b",
-            "qwen-vl-max",
-            "qwen-image-edit-pro",
-            "nano-banana-2-1-ultra",
-            "nano-banana-pro-4k",
-            "imagen-4-ultra",
-            "flux-1-1-pro-ultra",
-            "veo-3-1-ultra-cinema",
-            "veo-3-cinema-pro",
-            "wan-2-2-cinema-ultra",
-            "kling-2-5-turbo",
-            "higgsfield-cinema",
-            "higgsfield-dop-turbo",
-            "sora-veo-director",
-            "runway-gen-4",
-            "kling-2-master",
-            "seedance-1-pro",
-            "hailuo-minimax-video",
-            "luma-ray-2",
-            "pika-2-2-studio",
-            "midjourney-v7-art",
-            "perplexity-sonar-pro",
-            "perplexity-reasoning",
-            "perplexity-research",
-            "kimi-k2-thinking",
-            "kimi-k1-5",
-            "cohere-command-a",
-            "cohere-command-r-plus",
-            "microsoft-phi-4",
-            "amazon-nova-premier",
-            "nvidia-nemotron-ultra",
-            "glm-4-plus",
-            "minimax-01",
-            "yi-lightning",
-            "luxo-auto-router",
-            "luxo-flash",
-            "luxo-ultra",
-            "luxo-argon",
-            "luxo-quantum-math",
-            "luxo-sol",
-            "luxo-luna",
-            "luxo-dev-helper",
-            "luxo-dev"
-          ],
-          "maxLength": 40
+          "description": "Active Luxo AI or dynamic catalog model ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9._:/-]+$"
         },
         "lastUserPrompt": {
           "type": "string",
@@ -859,9 +737,10 @@
         },
         "modelId": {
           "type": "string",
-          "description": "Associated Luxo AI model ID.",
+          "description": "Associated Luxo AI or discovered catalog model ID.",
           "minLength": 1,
-          "maxLength": 40
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9._:/-]+$"
         },
         "content": {
           "type": "string",
@@ -895,6 +774,133 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "ProjectV2Record": {
+      "title": "ProjectV2Record",
+      "description": "Workspace project container owned by a verified user.",
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "description": "Unique project ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Owner UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 500 },
+        "category": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "systemPrompt": { "type": "string", "maxLength": 4000 },
+        "color": { "type": "string", "minLength": 4, "maxLength": 24 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["projectId", "ownerId", "name", "description", "category", "systemPrompt", "color", "createdAt", "updatedAt"]
+    },
+    "KnowledgeDocRecord": {
+      "title": "KnowledgeDocRecord",
+      "description": "User Knowledge Base document metadata summary.",
+      "type": "object",
+      "properties": {
+        "docId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "fileName": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "mimeType": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "chunkCount": { "type": "number" },
+        "embeddingMode": { "type": "string", "enum": ["gemini-embedding-2", "lexical-fallback"], "maxLength": 32 },
+        "previewText": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["docId", "ownerId", "title", "fileName", "mimeType", "chunkCount", "embeddingMode", "previewText", "createdAt", "updatedAt"]
+    },
+    "ArenaHistoryRecord": {
+      "title": "ArenaHistoryRecord",
+      "description": "Multi-model Arena comparison run summary owned by user.",
+      "type": "object",
+      "properties": {
+        "arenaId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "prompt": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "modelIds": { "type": "array", "description": "Compared model IDs (2..4)." },
+        "winnerModelId": { "type": "string", "maxLength": 128 },
+        "summaryText": { "type": "string", "maxLength": 6000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["arenaId", "ownerId", "prompt", "modelIds", "summaryText", "createdAt", "updatedAt"]
+    },
+    "AiProviderDoc": {
+      "title": "AiProviderDoc",
+      "description": "Admin-configured AI provider metadata (environment variable reference only; zero raw secrets).",
+      "type": "object",
+      "properties": {
+        "providerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "adapter": { "type": "string", "enum": ["gemini", "openai-compatible", "anthropic-compatible"], "maxLength": 32 },
+        "baseUrl": { "type": "string", "minLength": 8, "maxLength": 240 },
+        "secretEnvName": { "type": "string", "minLength": 2, "maxLength": 64, "pattern": "^[A-Z][A-Z0-9_]+$" },
+        "enabled": { "type": "boolean" },
+        "updatedBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["providerId", "name", "adapter", "baseUrl", "secretEnvName", "enabled", "updatedBy", "createdAt", "updatedAt"]
+    },
+    "AiModelDoc": {
+      "title": "AiModelDoc",
+      "description": "Admin-managed AI catalog model override or discovered model.",
+      "type": "object",
+      "properties": {
+        "modelDocId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "modelId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "providerId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "pricingStatus": { "type": "string", "enum": ["FREE", "FREE_TIER", "PAID", "REQUIRES_CREDITS", "UNKNOWN", "UNAVAILABLE"], "maxLength": 24 },
+        "enabled": { "type": "boolean" },
+        "updatedBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["modelDocId", "modelId", "name", "providerId", "pricingStatus", "enabled", "updatedBy", "createdAt", "updatedAt"]
+    },
+    "DiscoveryLogDoc": {
+      "title": "DiscoveryLogDoc",
+      "description": "Admin-managed AI endpoint discovery scan log.",
+      "type": "object",
+      "properties": {
+        "logId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "providerId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "scannedCount": { "type": "number" },
+        "newCandidatesCount": { "type": "number" },
+        "status": { "type": "string", "enum": ["ok", "skipped", "error"], "maxLength": 16 },
+        "message": { "type": "string", "maxLength": 400 },
+        "actorUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["logId", "providerId", "scannedCount", "newCandidatesCount", "status", "message", "actorUid", "createdAt"]
+    },
+    "AuditLogDoc": {
+      "title": "AuditLogDoc",
+      "description": "Admin security and configuration audit log entry.",
+      "type": "object",
+      "properties": {
+        "auditId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "actorUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "action": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "target": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "detail": { "type": "string", "maxLength": 400 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["auditId", "actorUid", "action", "target", "detail", "createdAt"]
     }
   },
   "firestore": {
@@ -921,6 +927,34 @@
     "/users/{userId}/workspaceItems/{itemId}": {
       "schema": { "$ref": "#/entities/LangdockWorkspaceItem" },
       "description": "User's Langdock enterprise assistants, prompts, knowledge docs, workflows, and integration settings."
+    },
+    "/users/{userId}/projects/{projectId}": {
+      "schema": { "$ref": "#/entities/ProjectV2Record" },
+      "description": "User workspace projects with custom instructions."
+    },
+    "/users/{userId}/documents/{docId}": {
+      "schema": { "$ref": "#/entities/KnowledgeDocRecord" },
+      "description": "User uploaded Knowledge Base document metadata."
+    },
+    "/users/{userId}/arenaHistory/{arenaId}": {
+      "schema": { "$ref": "#/entities/ArenaHistoryRecord" },
+      "description": "User Model Arena comparison history."
+    },
+    "/ai_providers/{providerId}": {
+      "schema": { "$ref": "#/entities/AiProviderDoc" },
+      "description": "Admin-managed AI providers registry."
+    },
+    "/ai_models/{modelId}": {
+      "schema": { "$ref": "#/entities/AiModelDoc" },
+      "description": "Admin-managed AI models catalog registry."
+    },
+    "/discovery_logs/{logId}": {
+      "schema": { "$ref": "#/entities/DiscoveryLogDoc" },
+      "description": "Admin-managed AI discovery scan logs."
+    },
+    "/audit_logs/{auditId}": {
+      "schema": { "$ref": "#/entities/AuditLogDoc" },
+      "description": "Immutable admin security audit trail."
     },
     "/publicProfiles/{userId}": {
       "schema": { "$ref": "#/entities/PublicSocialProfile" },

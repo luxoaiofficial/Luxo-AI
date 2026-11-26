@@ -28,7 +28,6 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 import { ChatThread, LuxoModelId, LuxoUser } from './types/luxo';
-import { LUXO_MODEL_IDS } from './utils/luxoLogic';
 
 const app = initializeApp(firebaseConfig);
 const firestoreDatabaseId = (
@@ -89,6 +88,23 @@ export function getGmailUserEmail(): string | null {
 export function clearGmailAccessToken(): void {
   inMemoryGmailAccessToken = null;
   inMemoryGmailEmail = null;
+}
+
+export const BOOTSTRAPPED_ADMIN_EMAIL = 'luxoaiofficial@gmail.com';
+
+export function isBootstrappedAdminEmail(email?: string | null): boolean {
+  return (email || '').trim().toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL;
+}
+
+export async function getVerifiedAuthBearerHeaders(): Promise<Record<string, string>> {
+  const current = auth.currentUser;
+  if (!current) return {};
+  try {
+    const token = await current.getIdToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
 }
 
 export async function signInWithGmailOAuth(): Promise<{
@@ -274,7 +290,7 @@ function isCompleteChatRecordDoc(
     data.title.length >= 1 &&
     data.title.length <= 120 &&
     typeof data.modelId === 'string' &&
-    LUXO_MODEL_IDS.includes(data.modelId as LuxoModelId) &&
+    /^[a-zA-Z0-9._:/-]{1,128}$/.test(data.modelId) &&
     typeof data.lastUserPrompt === 'string' &&
     data.lastUserPrompt.length <= 4000 &&
     typeof data.lastAssistantReply === 'string' &&
@@ -564,8 +580,9 @@ export async function saveChatToFirestore(chat: ChatThread): Promise<boolean> {
           .join('\n\n---\n\n')
       : '');
 
-  const modelId: LuxoModelId = LUXO_MODEL_IDS.includes(chat.modelId)
-    ? chat.modelId
+  const rawModelId = String(chat.modelId || 'gemini-4-argon').slice(0, 128);
+  const modelId: string = /^[a-zA-Z0-9._:/-]{1,128}$/.test(rawModelId)
+    ? rawModelId
     : 'gemini-4-argon';
 
   try {
@@ -771,8 +788,6 @@ export async function submitFeedbackToFirestore(
     handleFirestoreError(error, OperationType.CREATE, path);
   }
 }
-
-export const BOOTSTRAPPED_ADMIN_EMAIL = 'luxoaiofficial@gmail.com';
 
 export function isVerifiedFirebaseAdmin(): boolean {
   const cur = auth.currentUser;
@@ -1187,6 +1202,105 @@ export function subscribeLangdockWorkspaceItems(
       handleFirestoreError(error, OperationType.LIST, path);
     }
   );
+}
+
+export async function syncProjectV2ToFirestore(input: {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  systemPrompt: string;
+  color: string;
+}): Promise<boolean> {
+  if (!auth.currentUser || !auth.currentUser.emailVerified) return false;
+  const uid = await ensureParentUserDocReady(auth.currentUser);
+  const projectId = sanitizeSafeId(input.id);
+  const path = `users/${uid}/projects/${projectId}`;
+  const ref = doc(db, 'users', uid, 'projects', projectId);
+
+  const safeName = safeBoundedStr(input.name, 'Luxo Projesi', 120);
+  const safeDesc = String(input.description || '').slice(0, 500);
+  const safeCategory = safeBoundedStr(input.category, 'Genel', 60);
+  const safePrompt = String(input.systemPrompt || '').slice(0, 4000);
+  const safeColor = safeBoundedStr(input.color, '#7c3aed', 24);
+
+  try {
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      await setDoc(ref, {
+        projectId,
+        ownerId: uid,
+        name: safeName,
+        description: safeDesc,
+        category: safeCategory,
+        systemPrompt: safePrompt,
+        color: safeColor,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await updateDoc(ref, {
+        name: safeName,
+        description: safeDesc,
+        category: safeCategory,
+        systemPrompt: safePrompt,
+        color: safeColor,
+        updatedAt: serverTimestamp(),
+      });
+    }
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function syncArenaHistoryToFirestore(input: {
+  id: string;
+  prompt: string;
+  modelIds: string[];
+  winnerModelId?: string;
+  summaryText: string;
+}): Promise<boolean> {
+  if (!auth.currentUser || !auth.currentUser.emailVerified) return false;
+  const uid = await ensureParentUserDocReady(auth.currentUser);
+  const arenaId = sanitizeSafeId(input.id);
+  const path = `users/${uid}/arenaHistory/${arenaId}`;
+  const ref = doc(db, 'users', uid, 'arenaHistory', arenaId);
+  const safePrompt = safeBoundedStr(input.prompt, 'Model Arena Prompt', 4000);
+  const cleanModelIds = input.modelIds
+    .map((m) => String(m || '').slice(0, 128))
+    .filter((m) => /^[a-zA-Z0-9._:/-]{1,128}$/.test(m))
+    .slice(0, 4);
+  if (cleanModelIds.length < 2) return false;
+  const safeSummary = String(input.summaryText || '').slice(0, 6000);
+  const validWinner =
+    input.winnerModelId && /^[a-zA-Z0-9._:/-]{1,128}$/.test(input.winnerModelId)
+      ? input.winnerModelId
+      : undefined;
+
+  try {
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      await setDoc(ref, {
+        arenaId,
+        ownerId: uid,
+        prompt: safePrompt,
+        modelIds: cleanModelIds,
+        ...(validWinner ? { winnerModelId: validWinner } : {}),
+        summaryText: safeSummary,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } else if (validWinner) {
+      await updateDoc(ref, {
+        winnerModelId: validWinner,
+        updatedAt: serverTimestamp(),
+      });
+    }
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
 }
 
 

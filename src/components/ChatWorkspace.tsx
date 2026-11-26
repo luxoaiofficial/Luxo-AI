@@ -1,10 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   ArrowLeftRight,
   ArrowRight,
   Bell,
   Bookmark,
+  Bot,
   Brain,
   Check,
   ChevronDown,
@@ -12,25 +13,31 @@ import {
   Cloud,
   Columns2,
   Copy,
+  Database,
   Download,
   ExternalLink,
   FileDown,
   Folder,
+  Gauge,
   Globe,
   Image as ImageIcon,
   Key,
   Lock,
   Mic,
   Moon,
+  PanelLeft,
+  PanelRight,
   Paperclip,
   PenLine,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   Send,
   ShieldAlert,
   SlidersHorizontal,
   Sparkles,
+  Square,
   Sun,
   ThumbsDown,
   ThumbsUp,
@@ -41,18 +48,24 @@ import {
 } from 'lucide-react';
 import {
   AdaptiveSiteSuggestion,
+  AssistantPersona,
+  CatalogModelEntry,
   ChatCreationMode,
   ChatThread,
+  DailyModelTokenUsage,
+  KnowledgeDocSummary,
   LuxoModelCategory,
+  LuxoModelConfig,
   LuxoModelId,
   LuxoProject,
   LuxoUser,
+  ModelTokenLimitOverride,
+  ProviderConnectionStatusMap,
   SynthesisMode,
   VisualAspectRatio,
 } from '../types/luxo';
 import {
   calculateGuestRemainingMessages,
-  canAccessModel,
   enhanceUserPrompt,
   EXTENDED_CATALOG_MODEL_IDS,
   getSelectableChatModelIds,
@@ -61,10 +74,18 @@ import {
   LUXO_MODEL_CATEGORIES,
   LUXO_MODELS,
   LUXO_VOICES,
-  PUBLIC_CHAT_MODEL_IDS,
   sanitizeLuxoBrand,
   SYNTHESIS_MODES,
 } from '../utils/luxoLogic';
+import {
+  DEFAULT_PROVIDER_STATUS,
+  DEFAULT_WORKING_MODEL_ID,
+  formatTokenCount,
+  getEffectiveModelTokenLimits,
+  getModelDailyUsage,
+  isModelExecutableWithProviders,
+  PROVIDER_META,
+} from '../utils/tokenLimitsEngine';
 import { LuxoLogo, MarkdownContent, ModelBrandAvatar } from './LuxoLogo';
 import { QuickSocialShareButtons } from './SocialShareBar';
 import { ContentRatingAndComments } from './ContentRatingAndComments';
@@ -148,8 +169,30 @@ interface ChatWorkspaceProps {
   onTypingActivity?: (isTyping: boolean) => void;
   cloudSyncVisible?: boolean;
   onOpenExtendedCatalog?: () => void;
+  onOpenProviderSettings?: () => void;
   showExtendedCatalog?: boolean;
   isCatalogUnlocked?: boolean;
+  providerStatus?: ProviderConnectionStatusMap;
+  providersLoaded?: boolean;
+  tokenOverrides?: Partial<Record<string, ModelTokenLimitOverride>>;
+  dailyTokenUsage?: Record<string, DailyModelTokenUsage>;
+  onUpdateModelTokenOverride?: (
+    modelId: LuxoModelId,
+    override: ModelTokenLimitOverride
+  ) => void;
+  onResetModelTokenOverride?: (modelId: LuxoModelId) => void;
+  catalogModels?: CatalogModelEntry[];
+  zeroCostEnabled?: boolean;
+  favoriteModelIds?: string[];
+  recentModelIds?: string[];
+  onStopGenerating?: () => void;
+  onEditAndRerunMessage?: (messageId: string, newContent: string) => void;
+  knowledgeDocs?: KnowledgeDocSummary[];
+  attachedKnowledgeDocIds?: string[];
+  onToggleKnowledgeDoc?: (docId: string) => void;
+  onToggleRightPanel?: () => void;
+  isRightPanelOpen?: boolean;
+  activeAssistant?: AssistantPersona | null;
   user: LuxoUser;
   isStreaming: boolean;
 }
@@ -188,16 +231,8 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
   onOpenUpgradeModal,
   onOpenVoiceModal,
   onOpenVoiceCommands,
-  onOpenDashboard,
   onOpenImagesView,
   onOpenEvolutionView,
-  onOpenHubView,
-  onOpenContentStudioView,
-  onOpenSocialView,
-  unreadNotificationCount = 0,
-  onOpenNotifications,
-  evolutionGeneration = 2,
-  adaptiveSuggestions = [],
   onOpenAuthModal,
   onSaveToLibrary,
   onOpenCommandPalette,
@@ -205,29 +240,48 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
   onToggleTheme,
   onSynthesizeComparison,
   externalCompareRequest = 0,
-  collabParticipantsCount = 1,
-  collabRoomId = 'genel-studyo',
-  isCollabConnected = false,
-  onOpenCollabPanel,
   onTypingActivity,
   cloudSyncVisible = false,
   onOpenExtendedCatalog,
+  onOpenProviderSettings,
   showExtendedCatalog = false,
   isCatalogUnlocked = false,
+  providerStatus = DEFAULT_PROVIDER_STATUS,
+  providersLoaded = true,
+  tokenOverrides,
+  dailyTokenUsage,
+  onUpdateModelTokenOverride,
+  onResetModelTokenOverride,
+  catalogModels,
+  zeroCostEnabled = false,
+  favoriteModelIds = [],
+  recentModelIds = [],
+  onStopGenerating,
+  onEditAndRerunMessage,
+  knowledgeDocs = [],
+  attachedKnowledgeDocIds = [],
+  onToggleKnowledgeDoc,
+  onToggleRightPanel,
+  isRightPanelOpen = false,
+  activeAssistant = null,
   user,
   isStreaming,
 }) => {
   const [inputText, setInputText] = useState('');
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const [editingDraft, setEditingDraft] = useState('');
   const [showModelModal, setShowModelModal] = useState(false);
+  const [isTokenPopoverOpen, setIsTokenPopoverOpen] = useState(false);
   const [modelCategoryFilter, setModelCategoryFilter] = useState<
     'Tümü' | LuxoModelCategory
   >('Tümü');
   const [modelSearchQuery, setModelSearchQuery] = useState('');
   const [compareMode, setCompareMode] = useState(false);
-  const [compareModelA, setCompareModelA] =
-    useState<LuxoModelId>('gemini-4-argon');
+  const [compareModelA, setCompareModelA] = useState<LuxoModelId>(
+    DEFAULT_WORKING_MODEL_ID
+  );
   const [compareModelB, setCompareModelB] =
-    useState<LuxoModelId>('claude-4-sonnet');
+    useState<LuxoModelId>('gemini-4-hydrogen');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
@@ -252,9 +306,93 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const toolsPopoverRef = useRef<HTMLDivElement | null>(null);
+  const tokenPopoverRef = useRef<HTMLDivElement | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const currentModel = LUXO_MODELS[activeModelId] || LUXO_MODELS['gemini-4-carbon'];
+  const currentModel: LuxoModelConfig = useMemo(() => {
+    if (LUXO_MODELS[activeModelId]) return LUXO_MODELS[activeModelId];
+    const cat = catalogModels?.find((c) => c.id === activeModelId);
+    if (cat) {
+      return {
+        id: cat.id as LuxoModelId,
+        name: cat.name || cat.id,
+        badge:
+          cat.pricingStatus === 'FREE' || cat.pricingStatus === 'FREE_TIER'
+            ? 'Free'
+            : 'Catalog',
+        category: 'Perplexity & Küresel AI',
+        provider: cat.providerId as LuxoModelConfig['provider'],
+        sdkBackend: cat.adapter || 'openai-compatible',
+        tagline: cat.description || cat.providerLabel || cat.providerId,
+        description: cat.description || '',
+        speed: 'Hızlı',
+        isLocked: !cat.executable,
+        accentColor: cat.accentColor || '#7c3aed',
+        thinkingLevel: 'MEDIUM',
+        tier: cat.tier || 'free',
+        contextWindow: `${Math.round((cat.contextLength || 128000) / 1000)}K`,
+        logoUrl: cat.logoPath,
+        allowGuest: true,
+        capabilities: cat.capabilities || ['chat'],
+        maxInputTokens: cat.contextLength || 128000,
+        maxOutputTokens: cat.maxOutputTokens || 8192,
+        defaultDailyTokenLimit: 400000,
+        systemInstruction: '',
+      };
+    }
+    return LUXO_MODELS[DEFAULT_WORKING_MODEL_ID];
+  }, [activeModelId, catalogModels]);
+
+  const currentLimits = getEffectiveModelTokenLimits(
+    currentModel.id,
+    tokenOverrides
+  );
+  const currentDailyUsage = getModelDailyUsage(dailyTokenUsage, currentModel.id);
+  const currentCatalogEntry = catalogModels?.find(
+    (c) => c.id === currentModel.id
+  );
+  const currentAvailability = useMemo(() => {
+    if (currentCatalogEntry) {
+      if (zeroCostEnabled && !currentCatalogEntry.zeroCostAllowed) {
+        return {
+          unlocked: false,
+          provider: currentModel.provider,
+          reason: 'zero_cost_blocked',
+          reasonLabelTr: currentCatalogEntry.zeroCostReason || 'Zero-Cost Politikası',
+        };
+      }
+      if (!currentCatalogEntry.executable) {
+        return {
+          unlocked: false,
+          provider: currentModel.provider,
+          reason: 'provider_unconfigured',
+          reasonLabelTr: 'API Anahtarı Gerekli',
+        };
+      }
+      return {
+        unlocked: true,
+        provider: currentModel.provider,
+        reason: 'ok',
+        reasonLabelTr: 'API Hazır',
+      };
+    }
+    return isModelExecutableWithProviders(
+      currentModel.id,
+      providerStatus,
+      user,
+      currentModel.allowGuest !== false
+    );
+  }, [currentCatalogEntry, currentModel, providerStatus, user, zeroCostEnabled]);
+
+  const dailyQuotaPercent = Math.min(
+    100,
+    Math.round(
+      (currentDailyUsage.totalTokens /
+        Math.max(1, currentLimits.dailyTokenLimit)) *
+        100
+    )
+  );
+
   const messages = currentChat?.messages || [];
   const guestRemaining = calculateGuestRemainingMessages(user);
   const isGuestLimitReached = user.isGuest && guestRemaining <= 0;
@@ -264,7 +402,13 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
   );
   const totalModelCount = selectableModelIds.length;
   const accessibleModelIds = selectableModelIds.filter(
-    (id) => canAccessModel(id, user).allowed
+    (id) =>
+      isModelExecutableWithProviders(
+        id,
+        providerStatus,
+        user,
+        LUXO_MODELS[id]?.allowGuest !== false
+      ).unlocked
   );
   const anyComparisonInThread = messages.some(
     (m) => Array.isArray(m.comparisonResponses) && m.comparisonResponses.length >= 2
@@ -287,18 +431,27 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
   }, [externalCompareRequest]);
 
   useEffect(() => {
-    if (!isToolsMenuOpen) return;
+    if (!isToolsMenuOpen && !isTokenPopoverOpen) return;
     const handlePointerDown = (ev: MouseEvent) => {
       if (
+        isToolsMenuOpen &&
         toolsPopoverRef.current &&
         !toolsPopoverRef.current.contains(ev.target as Node)
       ) {
         setIsToolsMenuOpen(false);
       }
+      if (
+        isTokenPopoverOpen &&
+        tokenPopoverRef.current &&
+        !tokenPopoverRef.current.contains(ev.target as Node)
+      ) {
+        setIsTokenPopoverOpen(false);
+      }
     };
     const handleKeyDown = (ev: KeyboardEvent) => {
       if (ev.key === 'Escape') {
         setIsToolsMenuOpen(false);
+        setIsTokenPopoverOpen(false);
       }
     };
     document.addEventListener('mousedown', handlePointerDown);
@@ -307,7 +460,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isToolsMenuOpen]);
+  }, [isToolsMenuOpen, isTokenPopoverOpen]);
 
   useEffect(() => {
     return () => {
@@ -571,23 +724,24 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
   });
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-[#18181b] text-neutral-900 dark:text-neutral-100 select-none relative overflow-hidden">
+    <div className="flex flex-col h-full bg-[#f8fafc] dark:bg-[#0b0d14] text-slate-900 dark:text-slate-100 select-none relative overflow-hidden luxo-ambient-glow">
       {toastMessage && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 text-xs font-semibold rounded-full shadow-lg">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-semibold rounded-xl shadow-lg border border-slate-700/40 dark:border-slate-200">
           {toastMessage}
         </div>
       )}
 
-      <header className="flex items-center justify-between gap-1.5 sm:gap-3 px-2.5 sm:px-5 py-2 sm:py-2.5 bg-white/95 dark:bg-[#18181b]/95 backdrop-blur-xs z-20 shrink-0 border-b border-neutral-100 dark:border-neutral-800/90 min-w-0">
+      <header className="h-13 flex items-center justify-between gap-2 px-3 sm:px-5 bg-white/90 dark:bg-[#0b0d14]/90 backdrop-blur-md z-20 shrink-0 border-b border-slate-200/80 dark:border-slate-800/80 min-w-0">
         <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 sm:flex-initial">
           <button
             type="button"
+            data-testid="header-sidebar-toggle-btn"
             onClick={onOpenSidebar}
-            className="w-11 h-11 sm:w-10 sm:h-10 rounded-xl bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700/80 shadow-xs flex flex-col items-center justify-center gap-1 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
-            aria-label="Menüyü Aç"
+            className="w-9 h-9 rounded-xl hover:bg-slate-100 dark:hover:bg-[#181c2b] flex items-center justify-center text-slate-700 dark:text-slate-200 transition active:scale-95 cursor-pointer shrink-0"
+            aria-label="Kenar Çubuğunu Aç veya Daralt"
+            title="Kenar Çubuğu"
           >
-            <span className="w-4 h-0.5 bg-black dark:bg-white rounded-full" />
-            <span className="w-3.5 h-0.5 bg-black dark:bg-white rounded-full self-start ml-2.5 sm:ml-2" />
+            <PanelLeft className="w-4.5 h-4.5" />
           </button>
 
           <div className="min-w-0 flex-1 sm:flex-initial">
@@ -595,8 +749,16 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
               activeModelId={activeModelId}
               onSelectModel={onSelectModel}
               user={user}
+              providerStatus={providerStatus}
+              tokenOverrides={tokenOverrides}
+              dailyTokenUsage={dailyTokenUsage}
+              catalogModels={catalogModels}
+              zeroCostEnabled={zeroCostEnabled}
+              favoriteModelIds={favoriteModelIds}
+              recentModelIds={recentModelIds}
               onOpenUpgradeModal={onOpenUpgradeModal}
               onOpenExtendedCatalog={onOpenExtendedCatalog}
+              onOpenProviderSettings={onOpenProviderSettings}
               showExtendedCatalog={showExtendedCatalog}
               isCatalogUnlocked={isCatalogUnlocked}
               compact
@@ -604,16 +766,25 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
             />
           </div>
 
+          {activeAssistant && (
+            <div className="hidden xl:flex items-center gap-1.5 text-xs text-violet-700 dark:text-violet-300 shrink-0 pl-1">
+              <Bot className="w-3.5 h-3.5 shrink-0" />
+              <span className="font-medium truncate max-w-[130px]">
+                {activeAssistant.name}
+              </span>
+            </div>
+          )}
+
           {activeProject && (
-            <div className="hidden lg:flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-300 shrink-0">
+            <div className="hidden lg:flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 shrink-0 pl-1">
               <Folder className="w-3.5 h-3.5 text-emerald-500" />
-              <span className="font-semibold truncate max-w-[130px]">
+              <span className="font-medium truncate max-w-[120px]">
                 {activeProject.name}
               </span>
               <button
                 type="button"
                 onClick={onClearActiveProject}
-                className="text-neutral-400 hover:text-neutral-700 dark:hover:text-white cursor-pointer"
+                className="text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
                 aria-label="Proje bağlamını kaldır"
               >
                 <X className="w-3.5 h-3.5" />
@@ -622,33 +793,203 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
           )}
         </div>
 
-        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+          {/* Inline Token Limit & Daily Quota Popover Trigger */}
+          <div ref={tokenPopoverRef} className="relative">
+            <button
+              type="button"
+              data-testid="token-limit-popover-btn"
+              onClick={() => setIsTokenPopoverOpen((prev) => !prev)}
+              aria-expanded={isTokenPopoverOpen}
+              aria-haspopup="dialog"
+              title="Aktif model token sınırı ve günlük kota ayarları"
+              className={`h-9 flex items-center gap-1.5 px-2.5 rounded-xl border text-xs font-medium transition cursor-pointer whitespace-nowrap tabular-nums ${
+                dailyQuotaPercent >= 90
+                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                  : 'border-neutral-200/80 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-[#232429] text-neutral-700 dark:text-neutral-200'
+              }`}
+            >
+              <Gauge className="w-3.5 h-3.5 text-neutral-500 dark:text-neutral-400 shrink-0" />
+              <span className="hidden md:inline font-mono text-[11px]">
+                {formatTokenCount(currentLimits.maxOutputTokens)} çıktı
+              </span>
+              <span className="text-neutral-300 dark:text-neutral-700 hidden md:inline">
+                ·
+              </span>
+              <span className="font-mono text-[11px]">
+                {formatTokenCount(currentDailyUsage.totalTokens)}/
+                {formatTokenCount(currentLimits.dailyTokenLimit)}
+              </span>
+            </button>
+
+            {isTokenPopoverOpen && (
+              <div
+                role="dialog"
+                aria-label="Model Token Limitleri ve Günlük Kota"
+                data-testid="token-limit-popover"
+                className="fixed sm:absolute right-2 sm:right-0 left-2 sm:left-auto top-14 sm:top-full sm:mt-2 z-50 sm:w-[340px] bg-white dark:bg-[#191a1e] border border-neutral-200 dark:border-neutral-800 rounded-2xl shadow-xl p-4 space-y-4 text-left"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-neutral-900 dark:text-white truncate">
+                      {currentModel.name} · Token Sınırları
+                    </div>
+                    <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5 tabular-nums">
+                      {PROVIDER_META[currentModel.provider]?.shortLabel} · Bağlam:{' '}
+                      {formatTokenCount(currentLimits.maxInputTokens)} ·{' '}
+                      {currentAvailability.reasonLabelTr}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsTokenPopoverOpen(false)}
+                    aria-label="Token limit penceresini kapat"
+                    className="w-6 h-6 rounded-lg flex items-center justify-center text-neutral-400 hover:text-neutral-800 dark:hover:text-white cursor-pointer shrink-0"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Daily Quota Bar */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-medium text-neutral-600 dark:text-neutral-300">
+                      Bugünkü Tüketim
+                    </span>
+                    <span className="font-mono font-semibold text-neutral-900 dark:text-white tabular-nums">
+                      {currentDailyUsage.totalTokens.toLocaleString('tr-TR')} /{' '}
+                      {currentLimits.dailyTokenLimit.toLocaleString('tr-TR')} tok
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        dailyQuotaPercent >= 90
+                          ? 'bg-amber-500'
+                          : 'bg-neutral-900 dark:bg-white'
+                      }`}
+                      style={{ width: `${dailyQuotaPercent}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-neutral-400 tabular-nums">
+                    <span>{currentDailyUsage.requestCount} istek</span>
+                    <span>
+                      ↓ {formatTokenCount(currentDailyUsage.inputTokens)} · ↑{' '}
+                      {formatTokenCount(currentDailyUsage.outputTokens)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Max Output Tokens Slider */}
+                <div className="space-y-1.5 pt-2 border-t border-neutral-100 dark:border-neutral-800">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <label
+                      htmlFor="popover-max-output-range"
+                      className="font-medium text-neutral-700 dark:text-neutral-200"
+                    >
+                      Yanıt Başına Maks. Çıktı
+                    </label>
+                    <span className="font-mono font-semibold text-neutral-900 dark:text-white tabular-nums">
+                      {currentLimits.maxOutputTokens.toLocaleString('tr-TR')} tok
+                    </span>
+                  </div>
+                  <input
+                    id="popover-max-output-range"
+                    data-testid="token-max-output-slider"
+                    type="range"
+                    min={512}
+                    max={currentLimits.hardMaxOutputTokens}
+                    step={256}
+                    value={currentLimits.maxOutputTokens}
+                    onChange={(e) =>
+                      onUpdateModelTokenOverride?.(currentModel.id, {
+                        maxOutputTokens: Number(e.target.value),
+                        dailyTokenLimit: currentLimits.dailyTokenLimit,
+                      })
+                    }
+                    className="w-full accent-neutral-900 dark:accent-white cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-neutral-400 font-mono tabular-nums">
+                    <span>512</span>
+                    <span>{formatTokenCount(currentLimits.hardMaxOutputTokens)}</span>
+                  </div>
+                </div>
+
+                {/* Daily Quota Slider */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <label
+                      htmlFor="popover-daily-quota-range"
+                      className="font-medium text-neutral-700 dark:text-neutral-200"
+                    >
+                      Günlük Token Kotası
+                    </label>
+                    <span className="font-mono font-semibold text-neutral-900 dark:text-white tabular-nums">
+                      {formatTokenCount(currentLimits.dailyTokenLimit)} tok
+                    </span>
+                  </div>
+                  <input
+                    id="popover-daily-quota-range"
+                    data-testid="token-daily-quota-slider"
+                    type="range"
+                    min={10000}
+                    max={2000000}
+                    step={10000}
+                    value={currentLimits.dailyTokenLimit}
+                    onChange={(e) =>
+                      onUpdateModelTokenOverride?.(currentModel.id, {
+                        maxOutputTokens: currentLimits.maxOutputTokens,
+                        dailyTokenLimit: Number(e.target.value),
+                      })
+                    }
+                    className="w-full accent-neutral-900 dark:accent-white cursor-pointer"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-neutral-100 dark:border-neutral-800">
+                  <button
+                    type="button"
+                    data-testid="token-limit-reset-btn"
+                    onClick={() => {
+                      onResetModelTokenOverride?.(currentModel.id);
+                      showToast('Model token sınırları varsayılana sıfırlandı.');
+                    }}
+                    className="inline-flex items-center gap-1 text-[11px] font-medium text-neutral-500 hover:text-neutral-900 dark:hover:text-white cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Varsayılana Sıfırla</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {onOpenCommandPalette && (
             <button
               type="button"
               data-testid="header-search-btn"
               onClick={onOpenCommandPalette}
               aria-label="Hızlı Model ve Komut Arama"
-              title="Gelişmiş Arama (Ctrl+K)"
-              className="hidden sm:flex w-10 h-10 sm:w-auto sm:h-10 items-center justify-center gap-1.5 sm:px-2.5 rounded-xl bg-neutral-100 hover:bg-neutral-200 dark:bg-[#202123] dark:hover:bg-neutral-800 border border-neutral-200/80 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 text-xs font-semibold transition active:scale-95 cursor-pointer whitespace-nowrap shrink-0"
+              title="Hızlı Arama (Ctrl+K)"
+              className="hidden sm:flex h-9 items-center justify-center gap-1.5 px-2.5 rounded-xl border border-neutral-200/80 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-[#232429] text-neutral-600 dark:text-neutral-300 text-xs font-medium transition cursor-pointer whitespace-nowrap shrink-0"
             >
-              <Search className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+              <Search className="w-3.5 h-3.5" />
               <span className="hidden lg:inline font-mono text-[11px]">⌘K</span>
             </button>
           )}
           {messages.length > 0 && (
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-1 shrink-0">
               <button
                 type="button"
                 data-testid="export-chat-pdf-btn"
                 disabled={isExportingPdf}
                 onClick={() => void handleExportPdf()}
-                className="min-h-[38px] sm:min-h-[40px] flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white shadow-xs transition active:scale-95 cursor-pointer shrink-0 text-[11px] sm:text-xs font-semibold"
+                className="h-9 flex items-center gap-1 px-2.5 rounded-xl border border-violet-500/30 bg-violet-600/15 hover:bg-violet-600/25 disabled:opacity-60 text-violet-700 dark:text-violet-200 transition cursor-pointer shrink-0 text-[11px] font-semibold"
                 aria-label="Sohbeti PDF Olarak Dışa Aktar"
-                title="Formatlı PDF Belgesi Olarak İndir (.pdf · Ctrl+Shift+E)"
+                title="Formatlı PDF Belgesi Olarak İndir"
               >
                 <FileDown className="w-3.5 h-3.5 shrink-0" />
-                <span>
+                <span className="hidden sm:inline">
                   {isExportingPdf ? 'Hazır...' : 'PDF'}
                 </span>
               </button>
@@ -656,34 +997,14 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                 type="button"
                 data-testid="export-chat-btn"
                 onClick={() => handleExportChat('txt')}
-                className="hidden sm:flex min-h-[40px] items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0 text-xs font-semibold"
+                className="hidden md:flex h-9 items-center gap-1 px-2.5 rounded-xl border border-neutral-200/80 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-[#232429] transition cursor-pointer shrink-0 text-[11px] font-medium"
                 aria-label="Export Chat"
-                title="Export Chat (.txt metin dosyası olarak indir)"
+                title="Metin dosyası olarak indir (.txt)"
               >
-                <Download className="w-3.5 h-3.5 text-blue-500" />
-                <span className="hidden xl:inline">TXT</span>
+                <Download className="w-3.5 h-3.5" />
+                <span>TXT</span>
               </button>
             </div>
-          )}
-          {onOpenNotifications && (
-            <button
-              type="button"
-              data-testid="header-notifications-btn"
-              onClick={onOpenNotifications}
-              className="hidden sm:flex relative w-10 h-10 rounded-xl bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs items-center justify-center text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
-              aria-label="Bildirim Merkezi"
-              title="Bildirimler & Tercihler"
-            >
-              <Bell className="w-4 h-4 text-indigo-500" />
-              {unreadNotificationCount > 0 && (
-                <span
-                  data-testid="header-notifications-badge"
-                  className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center tabular-nums shadow-xs"
-                >
-                  {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
-                </span>
-              )}
-            </button>
           )}
           {onToggleTheme && (
             <button
@@ -691,8 +1012,8 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
               data-testid="header-theme-toggle-btn"
               onClick={onToggleTheme}
               aria-label={isDarkTheme ? 'Açık Temaya Geç' : 'Koyu Temaya Geç'}
-              title={isDarkTheme ? 'Açık Tema (Gündüz)' : 'Koyu Tema (Gece)'}
-              className="w-11 h-11 sm:w-10 sm:h-10 rounded-xl bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs flex items-center justify-center text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
+              title={isDarkTheme ? 'Açık Tema' : 'Koyu Tema'}
+              className="w-9 h-9 rounded-xl hover:bg-neutral-100 dark:hover:bg-[#232429] flex items-center justify-center text-neutral-600 dark:text-neutral-300 transition cursor-pointer shrink-0"
             >
               {isDarkTheme ? (
                 <Sun className="w-4 h-4 text-amber-400" />
@@ -704,29 +1025,45 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
           <button
             type="button"
             onClick={onOpenNewChat}
-            className="hidden sm:flex w-10 h-10 rounded-xl bg-white dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-700 shadow-xs items-center justify-center text-neutral-800 dark:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 transition active:scale-95 cursor-pointer shrink-0"
+            className="hidden sm:flex w-9 h-9 rounded-xl hover:bg-slate-100 dark:hover:bg-[#181c2b] items-center justify-center text-slate-600 dark:text-slate-300 transition cursor-pointer shrink-0"
             aria-label="Yeni Sohbet"
             title="Yeni Sohbet"
           >
             <RefreshCw className="w-4 h-4" />
           </button>
+          {onToggleRightPanel && (
+            <button
+              type="button"
+              data-testid="chat-right-panel-toggle-btn"
+              onClick={onToggleRightPanel}
+              aria-pressed={isRightPanelOpen}
+              aria-label="Bağlam Panelini Aç veya Kapat"
+              title="Sağ Bağlam Paneli"
+              className={`w-9 h-9 rounded-xl flex items-center justify-center transition cursor-pointer shrink-0 ${
+                isRightPanelOpen
+                  ? 'bg-violet-600/12 text-violet-600 dark:text-violet-400 border border-violet-500/30'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#181c2b]'
+              }`}
+            >
+              <PanelRight className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </header>
 
       {user.isGuest && (
-        <div className="bg-amber-500/10 dark:bg-amber-500/15 border-b border-amber-500/20 px-4 py-2 flex items-center justify-between text-xs text-amber-800 dark:text-amber-200 shrink-0">
-          <div className="flex items-center gap-2 truncate pr-2">
-            <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0" />
+        <div className="bg-neutral-50 dark:bg-[#1c1d22] border-b border-neutral-200/70 dark:border-neutral-800/80 px-3 sm:px-5 py-1 flex items-center justify-between text-[11px] text-neutral-600 dark:text-neutral-300 shrink-0">
+          <div className="flex items-center gap-1.5 truncate pr-2">
             <span className="font-medium truncate tabular-nums">
               {guestRemaining > 0
-                ? `Misafir Modu: Kalan ${guestRemaining} mesajınız var`
-                : 'Misafir limitiniz doldu!'}
+                ? `Misafir oturumu · Kalan ${guestRemaining} mesaj`
+                : 'Misafir mesaj kotası doldu'}
             </span>
           </div>
           <button
             type="button"
             onClick={onOpenAuthModal}
-            className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-full font-semibold text-[11px] shrink-0 transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
+            className="font-semibold text-neutral-900 dark:text-white hover:underline shrink-0 flex items-center gap-1 cursor-pointer whitespace-nowrap"
           >
             <span>Google ile Giriş</span>
             <ArrowRight className="w-3 h-3" />
@@ -734,39 +1071,126 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
         </div>
       )}
 
-      <main className="flex-1 overflow-y-auto px-3 sm:px-4 py-3 sm:py-4 flex flex-col justify-between">
+      <main className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 flex flex-col justify-between">
         {messages.length === 0 ? (
-          <div className="flex-1 flex flex-col justify-center sm:justify-end max-w-2xl mx-auto w-full pt-4 sm:pt-10 pb-3 sm:pb-5">
-            <div className="text-center mb-5 sm:mb-7">
-              <div className="flex justify-center mb-3">
+          <div className="flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full py-6">
+            <div className="text-center mb-6">
+              <div className="flex justify-center mb-3.5">
                 <ModelBrandAvatar
                   name={currentModel.name}
                   logoUrl={currentModel.logoUrl}
+                  provider={currentModel.provider}
+                  modelId={currentModel.id}
                   accentColor={currentModel.accentColor}
-                  sizeClass="w-12 h-12 rounded-2xl"
-                  imgClass="w-full h-full object-contain p-0.5"
+                  sizeClass="w-11 h-11 rounded-xl"
+                  imgClass="w-full h-full object-contain p-1"
                 />
               </div>
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-neutral-900 dark:text-white mb-2">
+              <h1 className="text-2xl sm:text-[28px] font-semibold tracking-tight text-neutral-900 dark:text-white mb-1.5">
                 Bugün ne üzerinde çalışıyoruz?
               </h1>
-              <p className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400">
-                Aktif Motor:{' '}
-                <span className="font-semibold text-neutral-800 dark:text-neutral-200">
+              <p className="text-xs sm:text-[13px] text-neutral-500 dark:text-neutral-400 tabular-nums">
+                <span className="font-medium text-neutral-800 dark:text-neutral-200">
                   {currentModel.name}
                 </span>{' '}
-                · {currentModel.contextWindow} Bağlam ·{' '}
+                · {formatTokenCount(currentLimits.maxInputTokens)} bağlam ·{' '}
+                {formatTokenCount(currentLimits.maxOutputTokens)} maks çıktı ·{' '}
                 <button
                   type="button"
                   onClick={() => setShowModelModal(true)}
-                  className="font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                  className="font-medium text-neutral-800 dark:text-neutral-200 hover:underline cursor-pointer"
                 >
-                  {totalModelCount} Açık Model
+                  {accessibleModelIds.length} Aktif / {totalModelCount} Model
                 </button>
               </p>
+
+              {providersLoaded && !currentAvailability.unlocked && (
+                <div
+                  data-testid="locked-active-model-notice"
+                  className="mt-4 mx-auto max-w-lg p-3 rounded-xl border border-amber-500/30 bg-amber-500/8 text-left flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+                >
+                  <div className="flex items-start gap-2 min-w-0">
+                    <Lock className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                    <div className="text-xs text-neutral-700 dark:text-neutral-200">
+                      <span className="font-semibold">{currentModel.name}</span> şu
+                      an kilitli ({currentAvailability.reasonLabelTr}).
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onSelectModel(DEFAULT_WORKING_MODEL_ID)}
+                    className="px-3 py-1.5 rounded-lg bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 text-[11px] font-semibold shrink-0 cursor-pointer"
+                  >
+                    Aktif Modele Geç
+                  </button>
+                </div>
+              )}
+
+              <div
+                data-testid="quick-brand-switcher"
+                className="mt-4 flex flex-wrap items-center justify-center gap-1.5"
+              >
+                {(
+                  [
+                    { id: DEFAULT_WORKING_MODEL_ID, label: 'Gemini 3.1 Lite' },
+                    { id: 'gemini-4-hydrogen', label: 'Gemini 4' },
+                    { id: 'luxo-auto-router', label: 'Auto Router' },
+                    { id: 'chatgpt-5-2-pro', label: 'ChatGPT-5.2' },
+                    { id: 'claude-5-5-opus', label: 'Claude 5.5' },
+                    { id: 'deepseek-r2', label: 'DeepSeek R2' },
+                  ] as const
+                ).map((item) => {
+                  const m = LUXO_MODELS[item.id];
+                  if (!m) return null;
+                  const avail = isModelExecutableWithProviders(
+                    item.id,
+                    providerStatus,
+                    user,
+                    m.allowGuest !== false
+                  );
+                  const isSelected = activeModelId === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        if (!avail.unlocked) {
+                          showToast(
+                            `${m.name} kilitli: ${avail.reasonLabelTr}`
+                          );
+                          onOpenProviderSettings?.();
+                          return;
+                        }
+                        onSelectModel(item.id);
+                        showToast(`${m.name} seçildi.`);
+                      }}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-medium transition cursor-pointer whitespace-nowrap ${
+                        isSelected
+                          ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 border-neutral-900 dark:border-white'
+                          : avail.unlocked
+                          ? 'bg-white dark:bg-[#202126] text-neutral-700 dark:text-neutral-200 border-neutral-200/80 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-600'
+                          : 'bg-neutral-50 dark:bg-[#1b1c20] text-neutral-400 dark:text-neutral-500 border-neutral-200/60 dark:border-neutral-800/70'
+                      }`}
+                    >
+                      <ModelBrandAvatar
+                        name={m.name}
+                        logoUrl={m.logoUrl}
+                        provider={m.provider}
+                        modelId={m.id}
+                        accentColor={m.accentColor}
+                        sizeClass="w-3.5 h-3.5 rounded-sm"
+                      />
+                      <span>{item.label}</span>
+                      {!avail.unlocked && (
+                        <Lock className="w-3 h-3 opacity-75 shrink-0" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <button
                 type="button"
                 onClick={() => {
@@ -776,17 +1200,15 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                     'Yüksek trafikli bir API servisi için en sade ve güvenilir hız sınırlama yöntemini kısaca açıkla.'
                   );
                 }}
-                className="flex items-center gap-3.5 px-4 py-4 bg-white dark:bg-[#202123] rounded-2xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left group"
+                className="flex items-start gap-3 p-3.5 bg-white dark:bg-[#1e1f24] rounded-2xl border border-neutral-200/80 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left"
               >
-                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center shrink-0">
-                  <PenLine className="w-5 h-5 group-hover:scale-105 transition" />
-                </div>
+                <PenLine className="w-4 h-4 text-neutral-500 shrink-0 mt-0.5" />
                 <div>
-                  <div className="text-sm font-semibold text-neutral-900 dark:text-white">
-                    Kısa & Net Sistem Çözümü
-                  </div>
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                    Uzatmadan doğrudan, yalın ve uygulanabilir mimari özet
+                  <h2 className="text-xs font-semibold text-neutral-900 dark:text-white">
+                    Kısa &amp; Net Sistem Çözümü
+                  </h2>
+                  <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                    Doğrudan, yalın ve uygulanabilir mimari özet
                   </div>
                 </div>
               </button>
@@ -797,17 +1219,15 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                   setCompareMode(true);
                   showToast('Yan yana karşılaştırma modu etkinleştirildi.');
                 }}
-                className="flex items-center gap-3.5 px-4 py-4 bg-white dark:bg-[#202123] rounded-2xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left group"
+                className="flex items-start gap-3 p-3.5 bg-white dark:bg-[#1e1f24] rounded-2xl border border-neutral-200/80 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left"
               >
-                <div className="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center shrink-0">
-                  <Columns2 className="w-5 h-5 group-hover:scale-105 transition" />
-                </div>
+                <Columns2 className="w-4 h-4 text-neutral-500 shrink-0 mt-0.5" />
                 <div>
-                  <div className="text-sm font-semibold text-neutral-900 dark:text-white">
+                  <h2 className="text-xs font-semibold text-neutral-900 dark:text-white">
                     Yan Yana Model Karşılaştır
-                  </div>
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                    Claude 5.5, ChatGPT-5.2, GPT-Astra ve Gemini 4 eşzamanlı
+                  </h2>
+                  <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                    Aktif modelleri eşzamanlı kıyaslayın
                   </div>
                 </div>
               </button>
@@ -815,62 +1235,39 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
               <button
                 type="button"
                 onClick={onOpenImagesView}
-                className="flex items-center gap-3.5 px-4 py-4 bg-white dark:bg-[#202123] rounded-2xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left group"
+                className="flex items-start gap-3 p-3.5 bg-white dark:bg-[#1e1f24] rounded-2xl border border-neutral-200/80 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left"
               >
-                <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
-                  <Video className="w-5 h-5 group-hover:scale-105 transition" />
-                </div>
+                <Video className="w-4 h-4 text-neutral-500 shrink-0 mt-0.5" />
                 <div>
-                  <div className="text-sm font-semibold text-neutral-900 dark:text-white">
-                    Nano Banana 4K & Google Veo
-                  </div>
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                    4K fotogerçekçi görsel ve sinematik video üret
+                  <h2 className="text-xs font-semibold text-neutral-900 dark:text-white">
+                    Nano Banana 4K &amp; Google Veo
+                  </h2>
+                  <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                    Görsel ve video stüdyosunda üretim yapın
                   </div>
                 </div>
               </button>
 
-              {onOpenExtendedCatalog ? (
-                <button
-                  type="button"
-                  data-testid="welcome-extended-models-card"
-                  onClick={onOpenExtendedCatalog}
-                  className="flex items-center gap-3.5 px-4 py-4 bg-white dark:bg-[#202123] rounded-2xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left group"
-                >
-                  <div className="w-9 h-9 rounded-xl bg-amber-500/12 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                    <Lock className="w-5 h-5 group-hover:scale-105 transition" />
+              <button
+                type="button"
+                data-testid="welcome-evolution-card"
+                onClick={() =>
+                  onOpenEvolutionView
+                    ? onOpenEvolutionView()
+                    : onOpenCommandPalette?.()
+                }
+                className="flex items-start gap-3 p-3.5 bg-white dark:bg-[#1e1f24] rounded-2xl border border-neutral-200/80 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left"
+              >
+                <Brain className="w-4 h-4 text-neutral-500 shrink-0 mt-0.5" />
+                <div>
+                  <h2 className="text-xs font-semibold text-neutral-900 dark:text-white">
+                    AI Gelişim &amp; Benchmark
+                  </h2>
+                  <div className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                    Modeller arası benchmark ve akıllı yönlendirme
                   </div>
-                  <div>
-                    <div className="text-sm font-semibold text-neutral-900 dark:text-white">
-                      Diğer Modeller (Ayarlar · Şifreli)
-                    </div>
-                    <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                      {EXTENDED_CATALOG_MODEL_IDS.length} ek yapay zekayı Ayarlar&apos;dan seçin
-                    </div>
-                  </div>
-                </button>
-              ) : (
-                onOpenCommandPalette && (
-                  <button
-                    type="button"
-                    data-testid="welcome-search-card"
-                    onClick={onOpenCommandPalette}
-                    className="flex items-center gap-3.5 px-4 py-4 bg-white dark:bg-[#202123] rounded-2xl border border-neutral-200/90 dark:border-neutral-800 shadow-xs hover:border-neutral-300 dark:hover:border-neutral-700 transition cursor-pointer text-left group"
-                  >
-                    <div className="w-9 h-9 rounded-xl bg-neutral-900/10 dark:bg-white/10 text-neutral-800 dark:text-neutral-200 flex items-center justify-center shrink-0">
-                      <Search className="w-5 h-5 group-hover:scale-105 transition" />
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-neutral-900 dark:text-white">
-                        Gelişmiş Arama ({totalModelCount} Model)
-                      </div>
-                      <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                        Modeller, makaleler, anketler ve tüm araçlara tek dokunuş
-                      </div>
-                    </div>
-                  </button>
-                )
-              )}
+                </div>
+              </button>
             </div>
           </div>
         ) : (
@@ -975,6 +1372,8 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                                   <ModelBrandAvatar
                                     name={compModel.name}
                                     logoUrl={compModel.logoUrl}
+                                    provider={compModel.provider}
+                                    modelId={compModel.id}
                                     accentColor={compModel.accentColor}
                                     sizeClass="w-6 h-6 rounded-lg"
                                   />
@@ -1137,35 +1536,45 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                 >
                   {!isAssistant && message.authorName && (
                     <div className="flex items-center gap-1.5 mb-1 px-2 text-[11px] text-neutral-500 dark:text-neutral-400">
-                      <span
-                        className="w-2 h-2 rounded-full"
-                        style={{
-                          backgroundColor: message.authorColor || '#2563eb',
-                        }}
-                      />
                       <span className="font-semibold">{message.authorName}</span>
                     </div>
                   )}
                   <div
-                    className={`max-w-[94%] sm:max-w-[86%] p-3.5 sm:p-4 transition-all ${
+                    className={`group/msg max-w-[94%] sm:max-w-[86%] p-3.5 sm:p-4 transition-all ${
                       isAssistant
-                        ? 'bg-transparent text-neutral-900 dark:text-neutral-100 w-full'
-                        : 'bg-neutral-100 dark:bg-[#2d2f34] text-neutral-900 dark:text-white rounded-3xl rounded-br-md shadow-xs'
+                        ? 'bg-transparent text-slate-900 dark:text-slate-100 w-full'
+                        : 'bg-white dark:bg-[#181c2b] border border-slate-200/80 dark:border-slate-800 text-slate-900 dark:text-slate-100 rounded-2xl rounded-br-sm shadow-xs'
                     }`}
                   >
                     {isAssistant && (
-                      <div className="flex items-center gap-2 mb-2.5 text-xs text-neutral-500 dark:text-neutral-400">
-                        <ModelBrandAvatar
-                          name={msgModel?.name || currentModel.name}
-                          logoUrl={msgModel?.logoUrl || currentModel.logoUrl}
-                          accentColor={msgModel?.accentColor || currentModel.accentColor}
-                          sizeClass="w-5 h-5 rounded-md"
-                        />
-                        <span className="font-bold text-neutral-900 dark:text-white">
-                          {msgModel?.name || currentModel.name}
-                        </span>
-                        <span aria-hidden="true">·</span>
-                        <span className="truncate">{msgModel?.badge}</span>
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2 text-xs text-slate-500 dark:text-slate-400">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <ModelBrandAvatar
+                            name={msgModel?.name || currentModel.name}
+                            logoUrl={msgModel?.logoUrl || currentModel.logoUrl}
+                            provider={msgModel?.provider || currentModel.provider}
+                            modelId={msgModel?.id || currentModel.id}
+                            accentColor={msgModel?.accentColor || currentModel.accentColor}
+                            sizeClass="w-5 h-5 rounded-md"
+                          />
+                          <span className="font-semibold text-slate-900 dark:text-slate-100 truncate">
+                            {msgModel?.name || currentModel.name}
+                          </span>
+                          <span aria-hidden="true">·</span>
+                          <span className="truncate text-[11px]">
+                            {PROVIDER_META[msgModel?.provider || currentModel.provider]?.shortLabel || msgModel?.category}
+                          </span>
+                        </div>
+                        {message.tokenUsage && (
+                          <span
+                            data-testid={`msg-token-usage-${message.id}`}
+                            className="font-mono text-[10px] text-slate-500 dark:text-slate-400 tabular-nums shrink-0"
+                          >
+                            ↓ {formatTokenCount(message.tokenUsage.inputTokens)} · ↑{' '}
+                            {formatTokenCount(message.tokenUsage.outputTokens)} tok · limit{' '}
+                            {formatTokenCount(message.tokenUsage.maxOutputTokens)}
+                          </span>
+                        )}
                       </div>
                     )}
 
@@ -1181,9 +1590,9 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                                 [message.id]: !prev[message.id],
                               }))
                             }
-                            className="flex items-center gap-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition cursor-pointer"
+                            className="flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition cursor-pointer"
                           >
-                            <Brain className="w-3.5 h-3.5 text-purple-500" />
+                            <Brain className="w-3.5 h-3.5 text-violet-500" />
                             <span>
                               Akıl Yürütme Süreci · {message.thinkingSteps.length} adım
                             </span>
@@ -1195,10 +1604,10 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                           </button>
 
                           {isThinkingOpen && (
-                            <div className="mt-2 p-3 rounded-2xl bg-neutral-50 dark:bg-[#202123] border border-neutral-200/80 dark:border-neutral-800 space-y-1.5 text-xs text-neutral-600 dark:text-neutral-300">
+                            <div className="mt-2 p-3 rounded-2xl bg-slate-50 dark:bg-[#111420] border border-slate-200/80 dark:border-slate-800 space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
                               {message.thinkingSteps.map((step, sIdx) => (
                                 <div key={sIdx} className="flex items-start gap-2">
-                                  <span className="font-mono text-[11px] text-neutral-400 tabular-nums">
+                                  <span className="font-mono text-[11px] text-slate-400 tabular-nums">
                                     0{sIdx + 1}.
                                   </span>
                                   <span>{sanitizeLuxoBrand(step)}</span>
@@ -1220,9 +1629,67 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                     >
                       {isAssistant ? (
                         <MarkdownContent content={message.content} />
+                      ) : editingMsgId === message.id ? (
+                        <div className="space-y-2 min-w-[240px] sm:min-w-[360px]">
+                          <textarea
+                            value={editingDraft}
+                            onChange={(e) => setEditingDraft(e.target.value)}
+                            rows={3}
+                            aria-label="Mesajı düzenle"
+                            className="w-full p-2.5 rounded-xl bg-slate-50 dark:bg-[#0b0d14] border border-violet-500/50 text-sm text-slate-900 dark:text-slate-100 focus:outline-hidden resize-y"
+                          />
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingMsgId(null);
+                                setEditingDraft('');
+                              }}
+                              className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-600 dark:text-slate-300 cursor-pointer"
+                            >
+                              İptal
+                            </button>
+                            <button
+                              type="button"
+                              data-testid={`msg-edit-save-${message.id}`}
+                              disabled={!editingDraft.trim() || isStreaming}
+                              onClick={() => {
+                                const nextText = editingDraft.trim();
+                                setEditingMsgId(null);
+                                setEditingDraft('');
+                                if (nextText) {
+                                  onEditAndRerunMessage?.(message.id, nextText);
+                                }
+                              }}
+                              className="px-3 py-1 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-xs font-semibold cursor-pointer"
+                            >
+                              Kaydet ve Yeniden Çalıştır
+                            </button>
+                          </div>
+                        </div>
                       ) : (
-                        <div className="whitespace-pre-wrap">
-                          {sanitizeLuxoBrand(message.content)}
+                        <div className="space-y-1.5">
+                          <div className="whitespace-pre-wrap">
+                            {sanitizeLuxoBrand(message.content)}
+                          </div>
+                          {onEditAndRerunMessage && !isStreaming && (
+                            <div className="flex justify-end">
+                              <button
+                                type="button"
+                                data-testid={`msg-edit-btn-${message.id}`}
+                                onClick={() => {
+                                  setEditingMsgId(message.id);
+                                  setEditingDraft(message.content);
+                                }}
+                                aria-label="Mesajı düzenle ve yeniden çalıştır"
+                                title="Düzenle ve Yeniden Çalıştır"
+                                className="opacity-70 hover:opacity-100 inline-flex items-center gap-1 text-[11px] text-slate-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-violet-400 transition cursor-pointer"
+                              >
+                                <PenLine className="w-3 h-3" />
+                                <span>Düzenle</span>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1345,30 +1812,53 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                     {isAssistant &&
                       message.citations &&
                       message.citations.length > 0 && (
-                        <div className="mt-4 pt-3 border-t border-neutral-100 dark:border-neutral-800/80">
-                          <div className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400 mb-2">
+                        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80">
+                          <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-2">
                             Doğrulanmış Kaynaklar
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {message.citations.map((cit, cIdx) => (
-                              <a
-                                key={cIdx}
-                                href={cit.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="p-2.5 rounded-xl bg-neutral-50 dark:bg-[#202123] border border-neutral-200/70 dark:border-neutral-800 hover:border-blue-500/50 transition flex items-start justify-between gap-2 text-left"
-                              >
-                                <div className="min-w-0">
-                                  <div className="text-xs font-semibold text-neutral-800 dark:text-neutral-200 truncate">
-                                    {sanitizeLuxoBrand(cit.title)}
+                            {message.citations.map((cit, cIdx) => {
+                              const isLocalRag =
+                                cit.domain === 'knowledge-base' ||
+                                cit.url.startsWith('#');
+                              if (isLocalRag) {
+                                return (
+                                  <div
+                                    key={cIdx}
+                                    className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#111420] border border-slate-200/70 dark:border-slate-800 flex items-start justify-between gap-2 text-left"
+                                  >
+                                    <div className="min-w-0">
+                                      <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                                        {sanitizeLuxoBrand(cit.title)}
+                                      </div>
+                                      <div className="text-[11px] text-violet-600 dark:text-violet-400 truncate">
+                                        Bilgi Tabanı (RAG)
+                                      </div>
+                                    </div>
+                                    <Database className="w-3.5 h-3.5 text-violet-500 shrink-0 mt-0.5" />
                                   </div>
-                                  <div className="text-[11px] text-neutral-400 truncate">
-                                    {cit.domain}
+                                );
+                              }
+                              return (
+                                <a
+                                  key={cIdx}
+                                  href={cit.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#111420] border border-slate-200/70 dark:border-slate-800 hover:border-violet-500/50 transition flex items-start justify-between gap-2 text-left"
+                                >
+                                  <div className="min-w-0">
+                                    <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                                      {sanitizeLuxoBrand(cit.title)}
+                                    </div>
+                                    <div className="text-[11px] text-slate-400 truncate">
+                                      {cit.domain}
+                                    </div>
                                   </div>
-                                </div>
-                                <ExternalLink className="w-3.5 h-3.5 text-neutral-400 shrink-0 mt-0.5" />
-                              </a>
-                            ))}
+                                  <ExternalLink className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                                </a>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -1569,18 +2059,33 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.16 }}
-                className="flex items-center gap-2 text-xs text-neutral-400 py-2"
+                className="flex items-center justify-between gap-2 text-xs text-slate-500 py-2"
               >
-                <ModelBrandAvatar
-                  name={currentModel.name}
-                  logoUrl={currentModel.logoUrl}
-                  accentColor={currentModel.accentColor}
-                  sizeClass="w-5 h-5 rounded-md animate-pulse"
-                />
-                <span className="font-semibold text-blue-600 dark:text-blue-400">
-                  {currentModel.name}
-                </span>
-                <span>sentezliyor ve yanıtlıyor...</span>
+                <div className="flex items-center gap-2">
+                  <ModelBrandAvatar
+                    name={currentModel.name}
+                    logoUrl={currentModel.logoUrl}
+                    provider={currentModel.provider}
+                    modelId={currentModel.id}
+                    accentColor={currentModel.accentColor}
+                    sizeClass="w-5 h-5 rounded-md"
+                  />
+                  <span className="font-semibold text-slate-900 dark:text-white">
+                    {currentModel.name}
+                  </span>
+                  <span>yanıt oluşturuyor...</span>
+                </div>
+                {onStopGenerating && (
+                  <button
+                    type="button"
+                    data-testid="stop-generating-inline-btn"
+                    onClick={onStopGenerating}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[11px] font-semibold hover:bg-rose-500/20 transition cursor-pointer"
+                  >
+                    <Square className="w-3 h-3 fill-current" />
+                    <span>Durdur</span>
+                  </button>
+                )}
               </motion.div>
             )}
             <div ref={bottomRef} />
@@ -1588,18 +2093,43 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
         )}
       </main>
 
-      <div className="p-3 sm:p-4 bg-white dark:bg-[#18181b] shrink-0 border-t border-neutral-100 dark:border-neutral-800/60">
+      <div className="p-3 sm:p-4 bg-white/90 dark:bg-[#0b0d14]/95 backdrop-blur-md shrink-0 border-t border-slate-200/70 dark:border-slate-800/80">
         <div className="max-w-3xl mx-auto w-full">
+          {knowledgeDocs.length > 0 && attachedKnowledgeDocIds.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 mb-2 text-[11px]">
+              <span className="text-slate-500 dark:text-slate-400 inline-flex items-center gap-1">
+                <Database className="w-3 h-3 text-violet-500" />
+                <span>RAG Bağlamı:</span>
+              </span>
+              {attachedKnowledgeDocIds.map((docId) => {
+                const doc = knowledgeDocs.find((d) => d.id === docId);
+                if (!doc) return null;
+                return (
+                  <button
+                    key={docId}
+                    type="button"
+                    onClick={() => onToggleKnowledgeDoc?.(docId)}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-violet-600/10 dark:bg-violet-500/15 border border-violet-500/30 text-violet-700 dark:text-violet-300 font-medium cursor-pointer"
+                    title="Bağlamdan çıkar"
+                  >
+                    <span className="truncate max-w-[140px]">{doc.title}</span>
+                    <X className="w-3 h-3 shrink-0" />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {attachedFile && (
-            <div className="flex items-center gap-2 p-2 mb-2 bg-neutral-100 dark:bg-neutral-800 rounded-xl text-xs">
-              <Paperclip className="w-3.5 h-3.5 text-neutral-500" />
+            <div className="flex items-center gap-2 p-2 mb-2 bg-slate-100 dark:bg-[#181c2b] rounded-xl text-xs">
+              <Paperclip className="w-3.5 h-3.5 text-slate-500" />
               <span className="truncate flex-1 font-medium">
                 {attachedFile.name}
               </span>
               <button
                 type="button"
                 onClick={() => setAttachedFile(null)}
-                className="p-1 hover:text-red-500 transition cursor-pointer"
+                className="p-1 hover:text-rose-500 transition cursor-pointer"
                 aria-label="Dosyayı Kaldır"
               >
                 <X className="w-3.5 h-3.5" />
@@ -1637,29 +2167,29 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
           ) : (
             <div className="space-y-2">
               {compareMode && (
-                <div className="p-2.5 rounded-2xl bg-indigo-500/8 dark:bg-indigo-950/35 border border-indigo-500/25 space-y-2">
+                <div className="p-2.5 rounded-2xl bg-neutral-50 dark:bg-[#1e1f24] border border-neutral-200/80 dark:border-neutral-800 space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-800 dark:text-neutral-200">
                       <Columns2 className="w-3.5 h-3.5" />
-                      <span>Yan Yana Model Karşılaştırma Modu Aktif</span>
+                      <span>Yan Yana Model Karşılaştırma</span>
                     </div>
                     <div className="flex flex-wrap items-center gap-1">
                       {(
                         [
                           {
-                            label: 'Gemini 4 vs Claude 4',
-                            a: 'gemini-4-argon',
-                            b: 'claude-4-sonnet',
+                            label: 'Flash Lite vs Gemini 4',
+                            a: DEFAULT_WORKING_MODEL_ID,
+                            b: 'gemini-4-hydrogen',
                           },
                           {
-                            label: 'ChatGPT-5o vs DeepSeek R2',
-                            a: 'chatgpt-5-omni',
-                            b: 'deepseek-r2',
+                            label: 'Gemini 4 vs Carbon',
+                            a: 'gemini-4-hydrogen',
+                            b: 'gemini-4-carbon',
                           },
                           {
-                            label: 'Gemini 4 vs Higgsfield',
-                            a: 'gemini-4-argon',
-                            b: 'higgsfield-cinema',
+                            label: 'GPT-5 vs Claude 5.5',
+                            a: 'chatgpt-5-2-pro',
+                            b: 'claude-5-5-opus',
                           },
                         ] as const
                       ).map((pair) => (
@@ -1670,7 +2200,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                             setCompareModelA(pair.a);
                             setCompareModelB(pair.b);
                           }}
-                          className="px-2 py-0.5 rounded-md bg-white dark:bg-[#202123] hover:bg-indigo-50 dark:hover:bg-neutral-800 border border-indigo-500/20 text-[10px] font-semibold text-neutral-700 dark:text-neutral-200 cursor-pointer transition"
+                          className="px-2 py-0.5 rounded-md bg-white dark:bg-[#26272e] hover:bg-neutral-100 dark:hover:bg-neutral-800 border border-neutral-200/80 dark:border-neutral-700 text-[10px] font-medium text-neutral-700 dark:text-neutral-200 cursor-pointer transition"
                         >
                           {pair.label}
                         </button>
@@ -1685,11 +2215,14 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                         setCompareModelA(e.target.value as LuxoModelId)
                       }
                       aria-label="Sol Karşılaştırma Modeli"
-                      className="flex-1 px-3 py-1.5 rounded-xl bg-white dark:bg-[#202123] border border-neutral-200 dark:border-neutral-700 text-xs font-bold text-neutral-900 dark:text-white focus:outline-hidden cursor-pointer"
+                      className="flex-1 px-3 py-1.5 rounded-xl bg-white dark:bg-[#26272e] border border-neutral-200 dark:border-neutral-700 text-xs font-medium text-neutral-900 dark:text-white focus:outline-hidden cursor-pointer"
                     >
-                      {accessibleModelIds.map((mId) => (
+                      {(accessibleModelIds.length > 0
+                        ? accessibleModelIds
+                        : selectableModelIds
+                      ).map((mId) => (
                         <option key={mId} value={mId}>
-                          Sol Model: {LUXO_MODELS[mId].name} ({LUXO_MODELS[mId].category})
+                          Sol: {LUXO_MODELS[mId].name}
                         </option>
                       ))}
                     </select>
@@ -1702,7 +2235,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                         setCompareModelB(prevA);
                       }}
                       aria-label="Modelleri Yer Değiştir"
-                      className="px-2.5 py-1.5 rounded-xl bg-white dark:bg-[#202123] border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center justify-center cursor-pointer transition shrink-0"
+                      className="px-2.5 py-1.5 rounded-xl bg-white dark:bg-[#26272e] border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 flex items-center justify-center cursor-pointer transition shrink-0"
                     >
                       <ArrowLeftRight className="w-3.5 h-3.5" />
                     </button>
@@ -1713,11 +2246,14 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                         setCompareModelB(e.target.value as LuxoModelId)
                       }
                       aria-label="Sağ Karşılaştırma Modeli"
-                      className="flex-1 px-3 py-1.5 rounded-xl bg-white dark:bg-[#202123] border border-neutral-200 dark:border-neutral-700 text-xs font-bold text-neutral-900 dark:text-white focus:outline-hidden cursor-pointer"
+                      className="flex-1 px-3 py-1.5 rounded-xl bg-white dark:bg-[#26272e] border border-neutral-200 dark:border-neutral-700 text-xs font-medium text-neutral-900 dark:text-white focus:outline-hidden cursor-pointer"
                     >
-                      {accessibleModelIds.map((mId) => (
+                      {(accessibleModelIds.length > 0
+                        ? accessibleModelIds
+                        : selectableModelIds
+                      ).map((mId) => (
                         <option key={mId} value={mId}>
-                          Sağ Model: {LUXO_MODELS[mId].name} ({LUXO_MODELS[mId].category})
+                          Sağ: {LUXO_MODELS[mId].name}
                         </option>
                       ))}
                     </select>
@@ -2206,15 +2742,29 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                     <Mic className="w-4.5 h-4.5 stroke-[1.9]" />
                   </button>
 
-                  {inputText.trim() && (
+                  {isStreaming && onStopGenerating ? (
                     <button
-                      type="submit"
-                      disabled={isStreaming}
-                      className="w-11 h-11 sm:w-9 sm:h-9 rounded-2xl bg-gradient-to-tr from-neutral-900 to-neutral-700 dark:from-white dark:to-neutral-200 text-white dark:text-neutral-900 shadow-sm flex items-center justify-center transition active:scale-95 cursor-pointer shrink-0"
-                      aria-label="Gönder"
+                      type="button"
+                      data-testid="stop-generating-btn"
+                      onClick={onStopGenerating}
+                      className="h-11 sm:h-9 px-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer shrink-0 whitespace-nowrap"
+                      aria-label="Üretimi Durdur"
                     >
-                      <Send className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                      <Square className="w-3.5 h-3.5 fill-current" />
+                      <span className="hidden sm:inline">Durdur</span>
                     </button>
+                  ) : (
+                    inputText.trim() && (
+                      <button
+                        type="submit"
+                        data-testid="chat-send-btn"
+                        disabled={isStreaming}
+                        className="w-11 h-11 sm:w-9 sm:h-9 rounded-2xl bg-violet-600 hover:bg-violet-700 text-white shadow-sm flex items-center justify-center transition active:scale-95 cursor-pointer shrink-0"
+                        aria-label="Gönder"
+                      >
+                        <Send className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                      </button>
+                    )
                   )}
 
                   {onOpenVoiceCommands && (
@@ -2382,74 +2932,84 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
                 })
                 .map((mId) => {
                   const m = LUXO_MODELS[mId];
-                  const access = canAccessModel(mId, user);
+                  const avail = isModelExecutableWithProviders(
+                    mId,
+                    providerStatus,
+                    user,
+                    m.allowGuest !== false
+                  );
+                  const limits = getEffectiveModelTokenLimits(
+                    mId,
+                    tokenOverrides
+                  );
                   const isSelected = activeModelId === mId;
                   return (
                     <button
                       key={mId}
                       type="button"
                       onClick={() => {
-                        if (access.allowed) {
+                        if (avail.unlocked) {
                           onSelectModel(mId);
                           setShowModelModal(false);
                           showToast(`${m.name} modeli seçildi.`);
                         } else {
                           setShowModelModal(false);
-                          if (access.reason === 'guest') {
+                          if (avail.reason === 'guest_restricted') {
                             onOpenAuthModal();
                             showToast(
                               `${m.name} modelini kullanabilmek için Google ile giriş yapın.`
                             );
-                          } else {
+                          } else if (avail.reason === 'tier_locked') {
                             onOpenUpgradeModal();
+                          } else {
+                            onOpenProviderSettings?.();
+                            showToast(
+                              `${m.name} kilitli: ${avail.reasonLabelTr}`
+                            );
                           }
                         }
                       }}
                       className={`w-full flex items-start gap-3 p-3 rounded-2xl text-left transition cursor-pointer border ${
                         isSelected
-                          ? 'border-blue-500 bg-blue-50/60 dark:bg-blue-950/25'
-                          : 'border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800/50'
+                          ? 'border-neutral-900 dark:border-white bg-neutral-100/80 dark:bg-neutral-800/70'
+                          : avail.unlocked
+                          ? 'border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800/50'
+                          : 'border-neutral-200/70 dark:border-neutral-800/70 opacity-75 hover:opacity-100'
                       }`}
                     >
-                      <div
-                        className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 overflow-hidden shadow-xs bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800"
-                      >
-                        {m.logoUrl ? (
-                          <img src={m.logoUrl} alt={m.name} className="w-5 h-5 object-contain" />
-                        ) : (
-                          <LuxoLogo className="w-4 h-4 text-white" size={18} />
-                        )}
-                      </div>
+                      <ModelBrandAvatar
+                        name={m.name}
+                        logoUrl={m.logoUrl}
+                        provider={m.provider}
+                        modelId={m.id}
+                        accentColor={m.accentColor}
+                        sizeClass="w-9 h-9 rounded-xl mt-0.5"
+                      />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-1.5">
-                          <span className="text-xs font-bold text-neutral-900 dark:text-white truncate">
+                          <span className="text-xs font-semibold text-neutral-900 dark:text-white truncate">
                             {m.name}
                           </span>
-                          {isSelected && (
-                            <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                          )}
+                          {isSelected ? (
+                            <Check className="w-3.5 h-3.5 text-neutral-900 dark:text-white shrink-0" />
+                          ) : !avail.unlocked ? (
+                            <Lock className="w-3 h-3 text-amber-500 shrink-0" />
+                          ) : null}
                         </div>
-                        <div className="flex items-center justify-between gap-1.5 mt-0.5">
-                          <span className="text-[10px] font-mono font-semibold text-indigo-600 dark:text-indigo-400 truncate">
-                            {m.badge}
+                        <div className="flex items-center justify-between gap-1.5 mt-0.5 tabular-nums">
+                          <span className="text-[10px] font-medium text-neutral-500 dark:text-neutral-400 truncate">
+                            {PROVIDER_META[m.provider]?.shortLabel} · {formatTokenCount(limits.maxInputTokens)} /{' '}
+                            {formatTokenCount(limits.maxOutputTokens)}
                           </span>
-                          {access.allowed ? (
-                            <span className="text-[10px] text-neutral-500 dark:text-neutral-400 font-medium shrink-0 tabular-nums">
-                              {m.contextWindow}
-                            </span>
-                          ) : access.reason === 'guest' ? (
-                            <span className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-0.5 font-semibold shrink-0">
-                              <Lock className="w-2.5 h-2.5" /> Giriş
-                            </span>
-                          ) : access.reason === 'dev_helper_locked' ? (
-                            <span className="text-[10px] text-sky-600 dark:text-sky-400 flex items-center gap-0.5 font-semibold shrink-0">
-                              <Lock className="w-2.5 h-2.5" /> Go
-                            </span>
-                          ) : (
-                            <span className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-0.5 font-semibold shrink-0">
-                              <Lock className="w-2.5 h-2.5" /> Plus
-                            </span>
-                          )}
+                          <span
+                            className={`text-[10px] font-medium shrink-0 ${
+                              avail.unlocked
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-amber-600 dark:text-amber-400'
+                            }`}
+                          >
+                            {avail.reasonLabelTr}
+                          </span>
                         </div>
                         <p className="text-[11px] text-neutral-500 dark:text-neutral-400 mt-1 line-clamp-2 leading-snug">
                           {m.description}

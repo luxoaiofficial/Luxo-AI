@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MotionConfig } from 'framer-motion';
 import {
   ArrowRight,
@@ -15,31 +15,41 @@ import {
   Share2,
   X,
 } from 'lucide-react';
-import QRCode from 'qrcode';
 import {
   AppNotification,
   AppView,
+  ArenaComparisonRun,
+  AssistantPersona,
+  CatalogModelEntry,
   ChatMessage,
   ChatThread,
   CinematicMotionParams,
   CitationItem,
   ComparisonModelResponse,
+  DailyModelTokenUsage,
   GeneratedVisual,
   InlineAttachmentPayload,
+  KnowledgeDocSummary,
   LibraryItem,
   LuxoModelCategory,
   LuxoModelId,
   LuxoPlugin,
   LuxoProject,
   LuxoUser,
+  ModelTokenLimitOverride,
   NotificationPreferences,
   PinnedWorkspaceId,
+  PlatformProviderConfig,
+  PromptTemplateRecord,
+  ProviderConnectionStatusMap,
   ScheduledRoutine,
   SelfEvolutionState,
   SharedContentPayload,
   SynthesisMode,
+  TokenUsageMetadata,
   TrainingConsentStatus,
   VisualAspectRatio,
+  WorkflowDefinition,
 } from './types/luxo';
 import {
   buildConsensusFusionPrompt,
@@ -47,7 +57,6 @@ import {
   cleanAssistantResponse,
   DEFAULT_CINEMATIC_MOTION,
   describeCinematicMotion,
-  generateLocalSmartResponse,
   GUEST_MESSAGE_LIMIT,
   INITIAL_CHATS,
   INITIAL_LIBRARY_ITEMS,
@@ -66,6 +75,22 @@ import {
   verifyAndRepairModelOutput,
 } from './utils/luxoLogic';
 import {
+  checkTokenQuotaForRequest,
+  DEFAULT_PROVIDER_STATUS,
+  DEFAULT_WORKING_MODEL_ID,
+  DESKTOP_SIDEBAR_STORAGE_KEY,
+  isModelExecutableWithProviders,
+  loadDailyTokenUsage,
+  loadModelTokenOverrides,
+  recordModelTokenUsage,
+  saveDailyTokenUsage,
+  saveModelTokenOverrides,
+} from './utils/tokenLimitsEngine';
+import {
+  DEFAULT_ZERO_COST_POLICY,
+  type ZeroCostPolicyState,
+} from './utils/zeroCostPolicy';
+import {
   parseRoomIdFromSearch,
   upsertSharedMessage,
 } from './utils/collabState';
@@ -73,6 +98,7 @@ import { useRealtimeCollab } from './hooks/useRealtimeCollab';
 import {
   auth,
   ensureAndSyncUserProfile,
+  isBootstrappedAdminEmail,
   loginWithEmailPassword,
   onAuthStateChanged,
   refreshCurrentUserVerification,
@@ -86,28 +112,95 @@ import {
   signOutFirebase,
   subscribeUserChats,
   submitFeedbackToFirestore,
+  syncArenaHistoryToFirestore,
+  syncProjectV2ToFirestore,
   updateUserProfileInFirestore,
 } from './firebase';
 import { WelcomeView } from './components/WelcomeView';
 import { SidebarDrawer } from './components/SidebarDrawer';
 import { ChatWorkspace } from './components/ChatWorkspace';
-import { CollabWorkspacePanel } from './components/CollabWorkspacePanel';
-import {
-  AuthModal,
-  FeedbackModal,
-  UpgradeModal,
-  VoiceModal,
-} from './components/Modals';
-import { CommandPaletteModal } from './components/CommandPaletteModal';
-import { NotificationCenterModal } from './components/NotificationCenterModal';
-import { CinematicMotionController } from './components/CinematicMotionController';
-import { TrainingConsentBanner } from './components/TrainingConsentBanner';
+import { RightContextPanel } from './components/RightContextPanel';
 
 import { retryDynamicImport } from './utils/moduleLoader';
 import type { HubTabId } from './components/CommunitySeoHub';
-import { VoiceCommandModal } from './components/VoiceCommandModal';
-import { GmailWorkspaceModal } from './components/GmailWorkspaceModal';
-import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
+
+const CollabWorkspacePanel = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/CollabWorkspacePanel').then((m) => ({
+      default: m.CollabWorkspacePanel,
+    }))
+  )
+);
+const UpgradeModal = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/Modals').then((m) => ({
+      default: m.UpgradeModal,
+    }))
+  )
+);
+const FeedbackModal = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/Modals').then((m) => ({
+      default: m.FeedbackModal,
+    }))
+  )
+);
+const AuthModal = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/Modals').then((m) => ({
+      default: m.AuthModal,
+    }))
+  )
+);
+const VoiceModal = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/Modals').then((m) => ({
+      default: m.VoiceModal,
+    }))
+  )
+);
+const CommandPaletteModal = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/CommandPaletteModal').then((m) => ({
+      default: m.CommandPaletteModal,
+    }))
+  )
+);
+const NotificationCenterModal = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/NotificationCenterModal').then((m) => ({
+      default: m.NotificationCenterModal,
+    }))
+  )
+);
+const CinematicMotionController = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/CinematicMotionController').then((m) => ({
+      default: m.CinematicMotionController,
+    }))
+  )
+);
+const VoiceCommandModal = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/VoiceCommandModal').then((m) => ({
+      default: m.VoiceCommandModal,
+    }))
+  )
+);
+const GmailWorkspaceModal = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/GmailWorkspaceModal').then((m) => ({
+      default: m.GmailWorkspaceModal,
+    }))
+  )
+);
+const KeyboardShortcutsModal = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/KeyboardShortcutsModal').then((m) => ({
+      default: m.KeyboardShortcutsModal,
+    }))
+  )
+);
 
 const ArgonCodeStudio = React.lazy(() =>
   retryDynamicImport(() =>
@@ -169,6 +262,41 @@ const PersonalDashboardView = React.lazy(() =>
   retryDynamicImport(() =>
     import('./components/PersonalDashboardView').then((m) => ({
       default: m.PersonalDashboardView,
+    }))
+  )
+);
+const HomeDashboardView = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/HomeDashboardView').then((m) => ({
+      default: m.HomeDashboardView,
+    }))
+  )
+);
+const ModelCenterView = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/ModelCenterView').then((m) => ({
+      default: m.ModelCenterView,
+    }))
+  )
+);
+const ModelArenaView = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/ModelArenaView').then((m) => ({
+      default: m.ModelArenaView,
+    }))
+  )
+);
+const V2StudiosView = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/V2StudiosView').then((m) => ({
+      default: m.V2StudiosView,
+    }))
+  )
+);
+const AdminDashboardView = React.lazy(() =>
+  retryDynamicImport(() =>
+    import('./components/AdminDashboardView').then((m) => ({
+      default: m.AdminDashboardView,
     }))
   )
 );
@@ -250,8 +378,10 @@ function stripSensitiveUserFields(raw: Record<string, unknown>): LuxoUser {
       localStorage.getItem('luxo_dev_helper_unlocked') === 'true',
     ageGroup: String(raw.ageGroup || 'Genç'),
     theme:
-      raw.theme === 'dark' || raw.theme === 'light' ? raw.theme : 'system',
-    accentColor: String(raw.accentColor || '#2563eb'),
+      raw.theme === 'dark' || raw.theme === 'light' || raw.theme === 'system'
+        ? raw.theme
+        : 'dark',
+    accentColor: String(raw.accentColor || '#7c3aed'),
     customInstructions: sanitizeLuxoBrand(
       String(raw.customInstructions || '')
     ),
@@ -281,9 +411,9 @@ function stripSensitiveUserFields(raw: Record<string, unknown>): LuxoUser {
         ? raw.codeTheme
         : 'dark',
     defaultModelId:
-      typeof raw.defaultModelId === 'string'
-        ? (raw.defaultModelId as any)
-        : 'gemini-4-carbon',
+      typeof raw.defaultModelId === 'string' && raw.defaultModelId in LUXO_MODELS
+        ? (raw.defaultModelId as LuxoModelId)
+        : DEFAULT_WORKING_MODEL_ID,
     reasoningLevel:
       raw.reasoningLevel === 'fast' || raw.reasoningLevel === 'deep'
         ? raw.reasoningLevel
@@ -350,16 +480,28 @@ export default function App() {
   const [currentView, setCurrentView] = useState<AppView>(() => {
     const params = new URLSearchParams(window.location.search);
     const v = params.get('view');
+    if (v === 'home') return 'home';
+    if (v === 'chat') return 'chat';
+    if (v === 'models') return 'models';
+    if (v === 'arena') return 'arena';
+    if (v === 'assistants') return 'assistants';
+    if (v === 'knowledge') return 'knowledge';
+    if (v === 'prompts') return 'prompts';
+    if (v === 'workflows') return 'workflows';
+    if (v === 'admin') return 'admin';
     if (v === 'dashboard') return 'dashboard';
     if (v === 'social') return 'social';
     if (v === 'evolution') return 'evolution';
     if (v === 'hub' || v === 'content-studio') return 'hub';
     if (v === 'images') return 'images';
     if (v === 'studio') return 'studio';
+    if (v === 'library') return 'library';
+    if (v === 'projects') return 'projects';
+    if (v === 'settings') return 'settings';
     if (params.get('welcome') === '1' && params.get('autostart') !== '1') {
       return 'welcome';
     }
-    return 'chat';
+    return 'home';
   });
 
   const [chats, setChats] = useState<ChatThread[]>(() => {
@@ -395,12 +537,30 @@ export default function App() {
   });
 
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [providerStatus, setProviderStatus] =
+    useState<ProviderConnectionStatusMap>(DEFAULT_PROVIDER_STATUS);
+  const [tokenOverrides, setTokenOverrides] = useState<
+    Partial<Record<LuxoModelId, ModelTokenLimitOverride>>
+  >(() => loadModelTokenOverrides());
+  const [dailyTokenUsage, setDailyTokenUsage] = useState<
+    Record<string, DailyModelTokenUsage>
+  >(() => loadDailyTokenUsage());
+
   const [activeModelId, setActiveModelId] = useState<LuxoModelId>(() => {
     const def = user.defaultModelId;
-    if (def && def in LUXO_MODELS && canAccessModel(def, user).allowed) {
+    if (
+      def &&
+      def in LUXO_MODELS &&
+      isModelExecutableWithProviders(
+        def,
+        DEFAULT_PROVIDER_STATUS,
+        user,
+        LUXO_MODELS[def]?.allowGuest !== false
+      ).unlocked
+    ) {
       return def;
     }
-    return 'gemini-4-carbon';
+    return DEFAULT_WORKING_MODEL_ID;
   });
   const [projects, setProjects] = useState<LuxoProject[]>(INITIAL_PROJECTS);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
@@ -424,6 +584,16 @@ export default function App() {
   >(undefined);
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState<boolean>(
+    () => {
+      try {
+        const stored = localStorage.getItem(DESKTOP_SIDEBAR_STORAGE_KEY);
+        return stored === null ? true : stored === 'true';
+      } catch {
+        return true;
+      }
+    }
+  );
   const [isCollabPanelOpen, setIsCollabPanelOpen] = useState(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
@@ -534,6 +704,307 @@ export default function App() {
 
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isGmailModalOpen, setIsGmailModalOpen] = useState(false);
+
+  // ======================== LUXO AI V2 PLATFORM STATE ========================
+  const [catalogModels, setCatalogModels] = useState<CatalogModelEntry[]>([]);
+  const [platformProviders, setPlatformProviders] = useState<PlatformProviderConfig[]>([]);
+  const [zeroCostPolicy, setZeroCostPolicy] = useState<ZeroCostPolicyState>(
+    DEFAULT_ZERO_COST_POLICY
+  );
+  const [favoriteModelIds, setFavoriteModelIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('luxo_v2_favorite_models');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed.map(String);
+      }
+    } catch {
+      // ignore
+    }
+    return ['gemini-2.5-flash', 'gemini-4-hydrogen', 'luxo-auto-router'];
+  });
+  const [recentModelIds, setRecentModelIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('luxo_v2_recent_models');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed.map(String);
+      }
+    } catch {
+      // ignore
+    }
+    return ['gemini-2.5-flash', 'gemini-3-1-flash-lite'];
+  });
+  const [assistants, setAssistants] = useState<AssistantPersona[]>(() => {
+    try {
+      const saved = localStorage.getItem('luxo_v2_assistants');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    const now = Date.now();
+    return [
+      {
+        id: 'ast-architect',
+        name: 'Principal Code Architect',
+        role: 'Full-Stack Systems & Code Review',
+        description:
+          'Designs production TypeScript, React, and backend architectures with clean APIs and defensive error handling.',
+        systemPrompt:
+          'You are a Principal Full-Stack Architect. Provide concise, production-ready TypeScript/React/Node solutions with edge-case validation and clear trade-offs.',
+        defaultModelId: 'gemini-2.5-flash',
+        temperature: 0.25,
+        capabilities: ['code', 'reasoning', 'architecture'],
+        knowledgeDocIds: [],
+        category: 'Coding',
+        isFeatured: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'ast-research',
+        name: 'Deep Research Analyst',
+        role: 'Evidence-Based Synthesis & Citations',
+        description:
+          'Synthesizes complex technical or market topics into structured executive briefs with verified sources.',
+        systemPrompt:
+          'You are a Deep Research Analyst. Break down claims systematically, highlight assumptions, and cite sources clearly.',
+        defaultModelId: 'gemini-4-hydrogen',
+        temperature: 0.35,
+        capabilities: ['research', 'web-search', 'analysis'],
+        knowledgeDocIds: [],
+        category: 'Research',
+        isFeatured: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'ast-writer',
+        name: 'Editorial Product Writer',
+        role: 'Product Copy, Docs & Localization',
+        description:
+          'Crafts crisp documentation, changelogs, and multilingual product copy without fluff.',
+        systemPrompt:
+          'You are an Editorial Product Writer. Write clear, high-signal documentation and copy tailored to the user language.',
+        defaultModelId: 'gemini-3-1-flash-lite',
+        temperature: 0.65,
+        capabilities: ['writing', 'localization'],
+        knowledgeDocIds: [],
+        category: 'Writing',
+        isFeatured: true,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'ast-security',
+        name: 'Security & Cloud Auditor',
+        role: 'AppSec, Auth & Infrastructure Hardening',
+        description:
+          'Audits endpoints, auth flows, Firestore rules, and SSRF/XSS vectors with actionable fixes.',
+        systemPrompt:
+          'You are a Senior Application Security Engineer. Identify concrete vulnerabilities and supply minimal, hardened patches.',
+        defaultModelId: 'gemini-2.5-flash',
+        temperature: 0.2,
+        capabilities: ['security', 'code', 'audit'],
+        knowledgeDocIds: [],
+        category: 'Coding',
+        isFeatured: false,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ];
+  });
+  const [activeAssistantId, setActiveAssistantId] = useState<string | null>(null);
+  const [promptTemplates, setPromptTemplates] = useState<PromptTemplateRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('luxo_v2_prompts');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    const now = Date.now();
+    return [
+      {
+        id: 'prm-arch-review',
+        title: 'API & Architecture Critique',
+        category: 'Coding',
+        description: 'Audit an endpoint or module for bottlenecks, failure modes, and security gaps.',
+        content:
+          'Review this architecture/code for: 1) single points of failure, 2) auth & input validation gaps, 3) latency bottlenecks, and 4) concrete refactored code.',
+        recommendedModelId: 'gemini-2.5-flash',
+        isFavorite: true,
+        usageCount: 14,
+        createdAt: now,
+      },
+      {
+        id: 'prm-exec-brief',
+        title: 'Executive Research Brief',
+        category: 'Research',
+        description: 'Turn any topic into a structured brief with key risks, trade-offs, and next steps.',
+        content:
+          'Create a crisp executive brief on the topic below: Core Thesis, Key Evidence, Trade-offs & Risks, and Recommended Action Plan.',
+        recommendedModelId: 'gemini-4-hydrogen',
+        isFavorite: true,
+        usageCount: 9,
+        createdAt: now,
+      },
+      {
+        id: 'prm-sql-opt',
+        title: 'Database Query & Index Tuner',
+        category: 'Analysis',
+        description: 'Diagnose slow queries and propose composite indexes and schema improvements.',
+        content:
+          'Analyze the following query and schema. Identify full-table scans, N+1 patterns, and provide optimal indexes and rewritten SQL.',
+        recommendedModelId: 'gemini-2.5-flash',
+        isFavorite: false,
+        usageCount: 7,
+        createdAt: now,
+      },
+      {
+        id: 'prm-ui-spec',
+        title: 'SaaS UI Component Specification',
+        category: 'Design',
+        description: 'Generate an accessible React + Tailwind layout spec with states and keyboard behavior.',
+        content:
+          'Design an accessible React + Tailwind CSS component spec including empty, loading, error states, keyboard navigation, and responsive breakpoints.',
+        recommendedModelId: 'gemini-3-1-flash-lite',
+        isFavorite: false,
+        usageCount: 11,
+        createdAt: now,
+      },
+      {
+        id: 'prm-release-notes',
+        title: 'Crisp Release Notes & Changelog',
+        category: 'Writing',
+        description: 'Convert raw commits or feature notes into customer-ready release highlights.',
+        content:
+          'Turn these engineering notes into concise, user-focused release notes grouped by New Features, Improvements, and Fixes.',
+        recommendedModelId: 'gemini-3-1-flash-lite',
+        isFavorite: false,
+        usageCount: 5,
+        createdAt: now,
+      },
+      {
+        id: 'prm-rag-qa',
+        title: 'Knowledge-Grounded Verification',
+        category: 'General',
+        description: 'Answer strictly from attached Knowledge Base documents and list unsupported gaps.',
+        content:
+          'Answer the question using only the attached Knowledge Base context. Explicitly flag anything not covered in the source documents.',
+        recommendedModelId: 'gemini-2.5-flash',
+        isFavorite: true,
+        usageCount: 12,
+        createdAt: now,
+      },
+    ];
+  });
+  const [workflows, setWorkflows] = useState<WorkflowDefinition[]>(() => {
+    try {
+      const saved = localStorage.getItem('luxo_v2_workflows');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    const now = Date.now();
+    return [
+      {
+        id: 'wf-spec-to-plan',
+        name: 'Product Spec to Engineering Plan',
+        description:
+          'Two-stage workflow: clarifies requirements first, then generates milestones and verification checks.',
+        category: 'Engineering',
+        steps: [
+          {
+            id: 'step-1',
+            title: 'Requirements & Edge Cases',
+            instruction:
+              'Extract functional requirements, non-functional constraints, and top 5 edge cases from the input.',
+            modelId: 'gemini-2.5-flash',
+            usePreviousOutput: false,
+          },
+          {
+            id: 'step-2',
+            title: 'Implementation & Test Plan',
+            instruction:
+              'Using the previous requirements, outline the modular architecture, API endpoints, and concrete verification checklist.',
+            modelId: 'gemini-2.5-flash',
+            usePreviousOutput: true,
+          },
+        ],
+        createdAt: now,
+      },
+      {
+        id: 'wf-draft-polish',
+        name: 'Research Synthesis & Executive Polish',
+        description:
+          'Extracts structured insights then polishes them into a concise stakeholder update.',
+        category: 'Productivity',
+        steps: [
+          {
+            id: 'step-a',
+            title: 'Fact & Risk Extraction',
+            instruction:
+              'Extract key metrics, facts, open questions, and risks as bullet points.',
+            modelId: 'gemini-3-1-flash-lite',
+            usePreviousOutput: false,
+          },
+          {
+            id: 'step-b',
+            title: 'Stakeholder Memo',
+            instruction:
+              'Rewrite the extracted findings into a crisp 3-paragraph executive memo with clear next actions.',
+            modelId: 'gemini-2.5-flash',
+            usePreviousOutput: true,
+          },
+        ],
+        createdAt: now,
+      },
+    ];
+  });
+  const [knowledgeDocs, setKnowledgeDocs] = useState<KnowledgeDocSummary[]>([]);
+  const [attachedKnowledgeDocIds, setAttachedKnowledgeDocIds] = useState<string[]>([]);
+  const [arenaHistory, setArenaHistory] = useState<ArenaComparisonRun[]>(() => {
+    try {
+      const saved = localStorage.getItem('luxo_v2_arena_history');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
+  const [arenaInitialModels, setArenaInitialModels] = useState<string[]>([
+    'gemini-2.5-flash',
+    'gemini-4-hydrogen',
+  ]);
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState<boolean>(() => {
+    if (typeof window === 'undefined' || window.innerWidth < 1280) {
+      return false;
+    }
+    try {
+      const saved = localStorage.getItem('luxo_v2_right_panel_open');
+      if (saved !== null) return saved === 'true';
+    } catch {
+      // ignore
+    }
+    return true;
+  });
+  const [providersLoaded, setProvidersLoaded] = useState(false);
+  const wasDesktopRightPanelRef = useRef<boolean>(
+    typeof window !== 'undefined' ? window.innerWidth >= 1280 : false
+  );
+  const chatAbortControllerRef = useRef<AbortController | null>(null);
 
   const unreadNotificationCount = getUnreadNotificationCount(
     notifications,
@@ -692,20 +1163,31 @@ export default function App() {
   }, [sharedIncoming]);
 
   useEffect(() => {
+    let active = true;
     if (shareBarQrModal && sharedIncoming) {
       const targetUrl =
         sharedIncoming.shareUrl ||
         (typeof window !== 'undefined' ? window.location.href : '');
       if (targetUrl) {
-        QRCode.toDataURL(targetUrl, {
-          width: 300,
-          margin: 2,
-          color: { dark: '#0f172a', light: '#ffffff' },
-        })
-          .then((url) => setShareBarQrDataUrl(url))
-          .catch(() => setShareBarQrDataUrl(''));
+        import('qrcode')
+          .then((mod) =>
+            mod.default.toDataURL(targetUrl, {
+              width: 300,
+              margin: 2,
+              color: { dark: '#0f172a', light: '#ffffff' },
+            })
+          )
+          .then((url) => {
+            if (active) setShareBarQrDataUrl(url);
+          })
+          .catch(() => {
+            if (active) setShareBarQrDataUrl('');
+          });
       }
     }
+    return () => {
+      active = false;
+    };
   }, [shareBarQrModal, sharedIncoming]);
 
   useEffect(() => {
@@ -749,7 +1231,11 @@ export default function App() {
 
       if (mod && !e.shiftKey && key === 'b') {
         e.preventDefault();
-        setIsSidebarOpen((prev) => !prev);
+        if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+          setIsDesktopSidebarOpen((prev) => !prev);
+        } else {
+          setIsSidebarOpen((prev) => !prev);
+        }
         return;
       }
 
@@ -866,7 +1352,7 @@ export default function App() {
               localStorage.getItem('luxo_dev_helper_unlocked') === 'true',
           }));
           localStorage.setItem('luxo_has_onboarded', 'true');
-          setCurrentView((v) => (v === 'welcome' ? 'chat' : v));
+          setCurrentView((v) => (v === 'welcome' ? 'home' : v));
 
           if (fbUser.emailVerified) {
             unsubChats = subscribeUserChats(fbUser.uid, (cloudChats) => {
@@ -945,7 +1431,168 @@ export default function App() {
   }, [evolutionState]);
 
   useEffect(() => {
+    saveModelTokenOverrides(tokenOverrides);
+  }, [tokenOverrides]);
+
+  useEffect(() => {
+    saveDailyTokenUsage(dailyTokenUsage);
+  }, [dailyTokenUsage]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        DESKTOP_SIDEBAR_STORAGE_KEY,
+        isDesktopSidebarOpen ? 'true' : 'false'
+      );
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [isDesktopSidebarOpen]);
+
+  const refreshPlatformCatalog = async () => {
+    try {
+      const res = await fetch('/api/catalog');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data?.models)) {
+        setCatalogModels(data.models as CatalogModelEntry[]);
+      }
+      if (Array.isArray(data?.providers)) {
+        const nextProvidersList = data.providers as PlatformProviderConfig[];
+        setPlatformProviders(nextProvidersList);
+        const mapped: ProviderConnectionStatusMap = { ...DEFAULT_PROVIDER_STATUS };
+        for (const p of nextProvidersList) {
+          mapped[p.id] = Boolean(p.connected);
+        }
+        setProviderStatus((prev) => ({ ...prev, ...mapped }));
+      }
+      if (data?.zeroCostPolicy) {
+        setZeroCostPolicy(data.zeroCostPolicy as ZeroCostPolicyState);
+      }
+    } catch {
+      // ignore transient network error
+    }
+  };
+
+  const refreshKnowledgeDocs = async () => {
+    try {
+      const res = await fetch('/api/knowledge/docs');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data?.docs)) {
+        setKnowledgeDocs(data.docs as KnowledgeDocSummary[]);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('luxo_v2_favorite_models', JSON.stringify(favoriteModelIds));
+    } catch {
+      // ignore
+    }
+  }, [favoriteModelIds]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('luxo_v2_recent_models', JSON.stringify(recentModelIds));
+    } catch {
+      // ignore
+    }
+  }, [recentModelIds]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('luxo_v2_assistants', JSON.stringify(assistants));
+    } catch {
+      // ignore
+    }
+  }, [assistants]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('luxo_v2_prompts', JSON.stringify(promptTemplates));
+    } catch {
+      // ignore
+    }
+  }, [promptTemplates]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('luxo_v2_workflows', JSON.stringify(workflows));
+    } catch {
+      // ignore
+    }
+  }, [workflows]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('luxo_v2_arena_history', JSON.stringify(arenaHistory.slice(0, 20)));
+    } catch {
+      // ignore
+    }
+  }, [arenaHistory]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.innerWidth >= 1280) {
+      try {
+        localStorage.setItem('luxo_v2_right_panel_open', isRightPanelOpen ? 'true' : 'false');
+      } catch {
+        // ignore
+      }
+    }
+  }, [isRightPanelOpen]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleResize = () => {
+      const isDesktop = window.innerWidth >= 1280;
+      if (wasDesktopRightPanelRef.current && !isDesktop) {
+        setIsRightPanelOpen(false);
+      }
+      wasDesktopRightPanelRef.current = isDesktop;
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
+    void refreshPlatformCatalog().finally(() => {
+      if (!cancelled) setProvidersLoaded(true);
+    });
+    void refreshKnowledgeDocs();
+
+    fetch('/api/providers/status')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.providers) {
+          const nextProviders = {
+            ...DEFAULT_PROVIDER_STATUS,
+            ...data.providers,
+          } as ProviderConnectionStatusMap;
+          setProviderStatus(nextProviders);
+          setActiveModelId((curr) => {
+            const avail = isModelExecutableWithProviders(
+              curr,
+              nextProviders,
+              userRef.current,
+              LUXO_MODELS[curr]?.allowGuest !== false
+            );
+            if (avail.unlocked) return curr;
+            if (nextProviders.google) return DEFAULT_WORKING_MODEL_ID;
+            return curr;
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setProvidersLoaded(true);
+      });
+
     fetch('/api/evolution/state')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -1191,6 +1838,43 @@ export default function App() {
   const activeChat = chats.find((c) => c.id === activeChatId) || null;
   const activeProject =
     projects.find((p) => p.id === activeProjectId) || null;
+  const activeAssistant =
+    assistants.find((a) => a.id === activeAssistantId) || null;
+  const isAdminUser = Boolean(
+    !user.isGuest &&
+      user.emailVerified &&
+      isBootstrappedAdminEmail(auth.currentUser?.email)
+  );
+  const connectedProviderCount = useMemo(
+    () =>
+      platformProviders.length > 0
+        ? platformProviders.filter((p) => p.connected).length
+        : Object.values(providerStatus).filter(Boolean).length,
+    [platformProviders, providerStatus]
+  );
+
+  const trackRecentModel = (modelId: string) => {
+    if (!modelId) return;
+    setRecentModelIds((prev) =>
+      [modelId, ...prev.filter((id) => id !== modelId)].slice(0, 8)
+    );
+  };
+
+  const handleToggleFavoriteModel = (modelId: string) => {
+    setFavoriteModelIds((prev) =>
+      prev.includes(modelId)
+        ? prev.filter((id) => id !== modelId)
+        : [modelId, ...prev]
+    );
+  };
+
+  const handleToggleAttachKnowledgeDoc = (docId: string) => {
+    setAttachedKnowledgeDocIds((prev) =>
+      prev.includes(docId)
+        ? prev.filter((id) => id !== docId)
+        : [...prev, docId]
+    );
+  };
 
   const handleUpdateUser = (partial: Partial<LuxoUser>) => {
     setUser((prev) => {
@@ -1212,13 +1896,13 @@ export default function App() {
   const handleSkipToGuest = () => {
     setUser((prev) => ({ ...prev, isGuest: true, guestMessageCount: 0 }));
     localStorage.setItem('luxo_has_onboarded', 'true');
-    setCurrentView('chat');
+    setCurrentView('home');
   };
 
   const handleFirebaseGoogleSignIn = async () => {
     await signInWithGoogleFirebase();
     localStorage.setItem('luxo_has_onboarded', 'true');
-    setCurrentView('chat');
+    setCurrentView('home');
   };
 
   const handleSignOut = async () => {
@@ -1535,6 +2219,44 @@ export default function App() {
     setCurrentView('chat');
   };
 
+  const handleUpdateModelTokenOverride = (
+    modelId: LuxoModelId,
+    override: ModelTokenLimitOverride
+  ) => {
+    setTokenOverrides((prev) => ({
+      ...prev,
+      [modelId]: override,
+    }));
+  };
+
+  const handleResetModelTokenOverride = (modelId: LuxoModelId) => {
+    setTokenOverrides((prev) => {
+      const copy = { ...prev };
+      delete copy[modelId];
+      return copy;
+    });
+  };
+
+  const handleStopGenerating = () => {
+    if (chatAbortControllerRef.current) {
+      try {
+        chatAbortControllerRef.current.abort();
+      } catch {
+        // ignore
+      }
+      chatAbortControllerRef.current = null;
+    }
+    setIsStreaming(false);
+  };
+
+  const handleEditAndRerunMessage = (messageId: string, newContent: string) => {
+    if (!activeChatId || !newContent.trim()) return;
+    handleStopGenerating();
+    void handleSendMessage(newContent, undefined, {
+      truncateBeforeMessageId: messageId,
+    });
+  };
+
   const handleSendMessage = async (
     text: string,
     attachment?: File,
@@ -1552,6 +2274,9 @@ export default function App() {
       imageStyle?: string;
       referenceImageDataUrl?: string;
       extraSystemContext?: string;
+      truncateBeforeMessageId?: string;
+      forceNewChat?: boolean;
+      assistantId?: string;
     }
   ) => {
     if (user.isGuest && user.guestMessageCount >= GUEST_MESSAGE_LIMIT) {
@@ -1573,10 +2298,103 @@ export default function App() {
             webSearch: options?.webSearch,
             hasAttachment: Boolean(attachment),
             evolutionState,
+            availableProviders: providerStatus,
           })
         : null;
     const routedModelId: LuxoModelId =
       autoRouterDecision?.targetModelId || activeModelId;
+    trackRecentModel(routedModelId);
+
+    const matchedCatalogModel = catalogModels.find((m) => m.id === routedModelId);
+    const baseAvailability =
+      matchedCatalogModel && !(routedModelId in LUXO_MODELS)
+        ? {
+            unlocked:
+              matchedCatalogModel.executable &&
+              (!zeroCostPolicy.enabled || matchedCatalogModel.zeroCostAllowed),
+            reasonLabelTr:
+              matchedCatalogModel.zeroCostReason ||
+              (matchedCatalogModel.executable
+                ? 'Canlı API Hazır'
+                : 'Sağlayıcı Anahtarı Gerekli'),
+          }
+        : isModelExecutableWithProviders(
+            routedModelId,
+            providerStatus,
+            user,
+            LUXO_MODELS[routedModelId]?.allowGuest !== false
+          );
+    const modelAvailability =
+      zeroCostPolicy.enabled &&
+      matchedCatalogModel &&
+      !matchedCatalogModel.zeroCostAllowed
+        ? {
+            unlocked: false,
+            reasonLabelTr:
+              matchedCatalogModel.zeroCostReason ||
+              'Zero-Cost Politikası: Ücretli modeller engellendi',
+          }
+        : baseAvailability;
+    const quotaCheck = checkTokenQuotaForRequest(
+      routedModelId,
+      cleanUserText,
+      tokenOverrides,
+      dailyTokenUsage
+    );
+
+    if (!modelAvailability.unlocked || !quotaCheck.allowed) {
+      const targetTitle = cleanUserText.slice(0, 42) || 'Yeni Sohbet';
+      let tChatId = activeChatId;
+      let tChat = chats.find((c) => c.id === tChatId);
+      if (!tChat) {
+        const created: ChatThread = {
+          id: `chat_${Date.now()}`,
+          title: targetTitle,
+          modelId: routedModelId,
+          projectId: activeProjectId || undefined,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          messages: [],
+        };
+        setChats((prev) => [created, ...prev]);
+        tChatId = created.id;
+        tChat = created;
+        setActiveChatId(created.id);
+      }
+      const uMsg: ChatMessage = {
+        id: `msg_${Date.now()}`,
+        role: 'user',
+        content: cleanUserText,
+        timestamp: Date.now(),
+        authorName: user.name,
+        authorColor: collab.myColor,
+      };
+      const blockReason = !modelAvailability.unlocked
+        ? `${LUXO_MODELS[routedModelId]?.name || routedModelId} şu an kilitli (${modelAvailability.reasonLabelTr}). Ayarlar > Yapay Zeka, API & Token Ayarları bölümünden sağlayıcı bağlantı durumunu görebilir veya API bağlantısı hazır bir model seçebilirsiniz.`
+        : quotaCheck.reason === 'input_too_large'
+        ? `İstem boyutu (~${quotaCheck.estimatedInputTokens} tok) bu modelin bağlam sınırını (${quotaCheck.maxInputTokens} tok) aşıyor.`
+        : `Günlük model token kotası doldu (${quotaCheck.usedTodayTokens}/${quotaCheck.dailyLimitTokens} tok). Token limiti ayarlarınızdan günlük kotayı artırabilirsiniz.`;
+      const errMsg: ChatMessage = {
+        id: `msg_lock_${Date.now() + 1}`,
+        role: 'assistant',
+        content: blockReason,
+        timestamp: Date.now() + 1,
+        modelId: routedModelId,
+      };
+      setChats((prev) =>
+        prev.map((c) =>
+          c.id === tChatId
+            ? {
+                ...c,
+                title: c.messages.length === 0 ? targetTitle : c.title,
+                messages: [...c.messages, uMsg, errMsg],
+                updatedAt: Date.now(),
+              }
+            : c
+        )
+      );
+      return;
+    }
 
     const isVideoGenTurn =
       options?.forceMediaMode === 'video' ||
@@ -1620,8 +2438,10 @@ export default function App() {
         : (firstSentence.slice(0, 46).replace(/\s+\S*$/, '') ||
             firstSentence.slice(0, 46)) + '…';
 
-    let targetChatId = activeChatId;
-    let targetChat = chats.find((c) => c.id === targetChatId);
+    let targetChatId = options?.forceNewChat ? null : activeChatId;
+    let targetChat = targetChatId
+      ? chats.find((c) => c.id === targetChatId)
+      : undefined;
 
     if (targetChat) {
       if (targetChat.messages.length === 0 && cleanUserText.trim()) {
@@ -1668,9 +2488,19 @@ export default function App() {
       inlineAttachment,
     };
 
-    const updatedMessages = [...targetChat.messages, userMsg];
+    let baseThreadMessages = targetChat.messages;
+    if (options?.truncateBeforeMessageId) {
+      const cutIdx = baseThreadMessages.findIndex(
+        (m) => m.id === options.truncateBeforeMessageId
+      );
+      if (cutIdx >= 0) {
+        baseThreadMessages = baseThreadMessages.slice(0, cutIdx);
+      }
+    }
+
+    const updatedMessages = [...baseThreadMessages, userMsg];
     const resolvedTitle =
-      targetChat.messages.length === 0 && cleanUserText.trim()
+      baseThreadMessages.length === 0 && cleanUserText.trim()
         ? cleanChatTitle
         : targetChat.title;
 
@@ -1717,6 +2547,7 @@ export default function App() {
     let finalThinkingSteps: string[] | undefined;
     let finalCitations: CitationItem[] | undefined;
     let finalFollowUps: string[] | undefined;
+    let finalTokenUsage: TokenUsageMetadata | undefined;
 
     if (isVideoGenTurn) {
       try {
@@ -1956,18 +2787,26 @@ export default function App() {
 
     const chatRequestStartMs = Date.now();
     let recordedChatTelemetry = false;
+    let requestSucceeded = false;
+    const abortController = new AbortController();
+    chatAbortControllerRef.current = abortController;
+    const resolvedAssistant = options?.assistantId
+      ? assistants.find((a) => a.id === options.assistantId) || activeAssistant
+      : activeAssistant;
 
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: abortController.signal,
         body: JSON.stringify({
           messages: updatedMessages.map((m) => ({
             role: m.role,
             content: m.content,
             ...(m.inlineAttachment ? { inlineAttachment: m.inlineAttachment } : {}),
           })),
-          modelId: activeModelId,
+          modelId: routedModelId,
+          maxOutputTokens: quotaCheck.maxOutputTokens,
           customInstructions: user.customInstructions,
           customTone: user.customTone,
           customWarmth: user.customWarmth,
@@ -1975,9 +2814,18 @@ export default function App() {
           customFormatting: user.customFormatting,
           customEmoji: user.customEmoji,
           memoryItems,
-          projectContext: [activeProject?.systemPrompt, options?.extraSystemContext]
-            .filter(Boolean)
-            .join('\n\n') || undefined,
+          projectContext:
+            [
+              activeProject?.systemPrompt,
+              resolvedAssistant?.systemPrompt,
+              options?.extraSystemContext,
+            ]
+              .filter(Boolean)
+              .join('\n\n') || undefined,
+          knowledgeDocIds:
+            attachedKnowledgeDocIds.length > 0
+              ? attachedKnowledgeDocIds
+              : undefined,
           webSearch: options?.webSearch,
           deepReasoning: options?.deepReasoning,
           synthesisMode: options?.synthesisMode,
@@ -1985,16 +2833,36 @@ export default function App() {
           responseConciseness: user.responseConciseness || 'balanced',
           codeStrictness: user.codeStrictness || 'production',
           autoVerifyOutputs: user.autoVerifyOutputs !== false,
-          temperature: user.temperature,
+          temperature: resolvedAssistant?.temperature ?? user.temperature,
           inlineAttachment,
           stream: true,
         }),
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error ${response.status}`);
+        const errPayload = await response.json().catch(() => null);
+        const errMessage =
+          (errPayload && typeof errPayload.error === 'string' && errPayload.error) ||
+          (response.status === 403
+            ? `${LUXO_MODELS[routedModelId]?.name || routedModelId} modeli için sunucu API anahtarı tanımlı olmadığından model kilitlidir.`
+            : `Sunucu hatası (HTTP ${response.status}). Lütfen bağlantıyı kontrol edip tekrar deneyin.`);
+        finalAssistantText = errMessage;
+        setChats((prev) =>
+          prev.map((c) =>
+            c.id === targetChatId
+              ? {
+                  ...c,
+                  messages: c.messages.map((m) =>
+                    m.id === aiMsgId ? { ...m, content: finalAssistantText } : m
+                  ),
+                }
+              : c
+          )
+        );
+        return;
       }
 
+      requestSucceeded = true;
       const contentType = response.headers.get('content-type') || '';
       if (contentType.includes('text/event-stream')) {
         const reader = response.body?.getReader();
@@ -2028,6 +2896,9 @@ export default function App() {
                   finalThinkingSteps = parsed.meta.thinkingSteps;
                   finalCitations = parsed.meta.citations;
                   finalFollowUps = parsed.meta.followUpSuggestions;
+                  if (parsed.meta.tokenUsage) {
+                    finalTokenUsage = parsed.meta.tokenUsage as TokenUsageMetadata;
+                  }
                   if (!recordedChatTelemetry) {
                     recordedChatTelemetry = true;
                     const measuredLatencyMs =
@@ -2035,7 +2906,7 @@ export default function App() {
                         ? parsed.meta.latencyMs
                         : Math.max(120, Date.now() - chatRequestStartMs);
                     const telemetryModel = (parsed.meta.resolvedModel ||
-                      activeModelId) as LuxoModelId;
+                      routedModelId) as LuxoModelId;
                     setEvolutionState((prev) =>
                       recordModelUsageInState(prev, telemetryModel, {
                         latencyMs: measuredLatencyMs,
@@ -2060,6 +2931,7 @@ export default function App() {
                                   thinkingSteps: finalThinkingSteps,
                                   citations: finalCitations,
                                   followUpSuggestions: finalFollowUps,
+                                  tokenUsage: finalTokenUsage,
                                 }
                               : m
                           ),
@@ -2082,6 +2954,9 @@ export default function App() {
         finalThinkingSteps = data.thinkingSteps;
         finalCitations = data.citations;
         finalFollowUps = data.followUpSuggestions;
+        if (data.tokenUsage) {
+          finalTokenUsage = data.tokenUsage as TokenUsageMetadata;
+        }
         if (!recordedChatTelemetry) {
           recordedChatTelemetry = true;
           const measuredLatencyMs =
@@ -2110,6 +2985,7 @@ export default function App() {
                           thinkingSteps: finalThinkingSteps,
                           citations: finalCitations,
                           followUpSuggestions: finalFollowUps,
+                          tokenUsage: finalTokenUsage,
                         }
                       : m
                   ),
@@ -2118,62 +2994,56 @@ export default function App() {
           )
         );
       }
-    } catch {
-      const fallback = generateLocalSmartResponse(
-        cleanUserText,
-        routedModelId,
-        {
-          webSearch:
-            options?.webSearch || Boolean(autoRouterDecision?.autoWebSearch),
-          deepReasoning:
-            options?.deepReasoning ||
-            Boolean(autoRouterDecision?.autoDeepReasoning) ||
-            user.reasoningLevel === 'deep',
-          synthesisMode: options?.synthesisMode,
-          conversationHistory: updatedMessages.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-          attachmentInfo: inlineAttachment
-            ? {
-                name: inlineAttachment.name,
-                mimeType: inlineAttachment.mimeType,
-              }
-            : undefined,
+    } catch (err) {
+      const isAbort =
+        (err instanceof DOMException && err.name === 'AbortError') ||
+        (err instanceof Error && err.name === 'AbortError');
+      if (isAbort) {
+        if (!finalAssistantText.trim()) {
+          finalAssistantText = 'Yanıt üretimi kullanıcı tarafından durduruldu.';
         }
-      );
-      finalAssistantText = cleanAssistantResponse(fallback.text, true);
-      finalThinkingSteps = fallback.thinkingSteps;
-      finalCitations = fallback.citations;
-      finalFollowUps = fallback.followUpSuggestions;
+      } else {
+        const msg =
+          err instanceof Error && err.message
+            ? `Model API bağlantısında sorun oluştu: ${err.message}`
+            : 'Model API sunucusuna ulaşılamadı. Lütfen tekrar deneyin.';
+        finalAssistantText = msg;
+      }
       setChats((prev) =>
         prev.map((c) =>
           c.id === targetChatId
             ? {
                 ...c,
                 messages: c.messages.map((m) =>
-                  m.id === aiMsgId
-                    ? {
-                        ...m,
-                        content: finalAssistantText,
-                        thinkingSteps: finalThinkingSteps,
-                        citations: finalCitations,
-                        followUpSuggestions: finalFollowUps,
-                      }
-                    : m
+                  m.id === aiMsgId ? { ...m, content: finalAssistantText } : m
                 ),
               }
             : c
         )
       );
     } finally {
-      finalAssistantText =
-        user.autoVerifyOutputs !== false
-          ? verifyAndRepairModelOutput(finalAssistantText, {
-              allowLong: true,
-              autoVerify: true,
-            })
-          : cleanAssistantResponse(finalAssistantText, true);
+      if (chatAbortControllerRef.current === abortController) {
+        chatAbortControllerRef.current = null;
+      }
+      if (requestSucceeded && finalAssistantText.trim()) {
+        finalAssistantText =
+          user.autoVerifyOutputs !== false
+            ? verifyAndRepairModelOutput(finalAssistantText, {
+                allowLong: true,
+                autoVerify: true,
+              })
+            : cleanAssistantResponse(finalAssistantText, true);
+      }
+      if (finalTokenUsage) {
+        setDailyTokenUsage((prev) =>
+          recordModelTokenUsage(
+            prev,
+            routedModelId,
+            finalTokenUsage!.inputTokens,
+            finalTokenUsage!.outputTokens
+          )
+        );
+      }
       setChats((prev) =>
         prev.map((c) =>
           c.id === targetChatId
@@ -2184,6 +3054,7 @@ export default function App() {
                     ? {
                         ...m,
                         content: finalAssistantText,
+                        ...(finalTokenUsage ? { tokenUsage: finalTokenUsage } : {}),
                       }
                     : m
                 ),
@@ -2201,6 +3072,7 @@ export default function App() {
         thinkingSteps: finalThinkingSteps,
         citations: finalCitations,
         followUpSuggestions: finalFollowUps,
+        tokenUsage: finalTokenUsage,
       });
       if (!user.isGuest && targetChatId) {
         const completedThread: ChatThread = {
@@ -2217,12 +3089,13 @@ export default function App() {
               content: finalAssistantText,
               timestamp: Date.now(),
               modelId: routedModelId,
+              ...(finalTokenUsage ? { tokenUsage: finalTokenUsage } : {}),
             },
           ],
         };
         void persistChatAndTrackSync(completedThread);
       }
-      if (cleanUserText && finalAssistantText) {
+      if (requestSucceeded && cleanUserText && finalAssistantText) {
         submitConsentedChatSignal(
           cleanUserText,
           finalAssistantText,
@@ -2423,6 +3296,45 @@ export default function App() {
       let paneText = '';
       let paneThinking: string[] | undefined;
       let paneCitations: CitationItem[] | undefined;
+      let paneTokenUsage: TokenUsageMetadata | undefined;
+
+      const avail = isModelExecutableWithProviders(
+        targetModelId,
+        providerStatus,
+        user,
+        LUXO_MODELS[targetModelId]?.allowGuest !== false
+      );
+      const qCheck = checkTokenQuotaForRequest(
+        targetModelId,
+        cleanUserText,
+        tokenOverrides,
+        dailyTokenUsage
+      );
+
+      if (!avail.unlocked) {
+        panes[paneIdx] = {
+          modelId: targetModelId,
+          content: `${LUXO_MODELS[targetModelId]?.name || targetModelId} kilitli (${avail.reasonLabelTr}).`,
+          latencyMs: Date.now() - startedAt,
+          isStreaming: false,
+        };
+        syncComparePanesToState();
+        return;
+      }
+
+      if (!qCheck.allowed) {
+        panes[paneIdx] = {
+          modelId: targetModelId,
+          content:
+            qCheck.reason === 'input_too_large'
+              ? 'İstem model bağlam sınırını aşıyor.'
+              : 'Günlük token kotası doldu.',
+          latencyMs: Date.now() - startedAt,
+          isStreaming: false,
+        };
+        syncComparePanesToState();
+        return;
+      }
 
       try {
         const res = await fetch('/api/chat', {
@@ -2435,6 +3347,7 @@ export default function App() {
               ...(m.inlineAttachment ? { inlineAttachment: m.inlineAttachment } : {}),
             })),
             modelId: targetModelId,
+            maxOutputTokens: qCheck.maxOutputTokens,
             customInstructions: user.customInstructions,
             customTone: user.customTone,
             customWarmth: user.customWarmth,
@@ -2451,7 +3364,15 @@ export default function App() {
           }),
         });
 
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => null);
+          paneText =
+            (errJson && typeof errJson.error === 'string' && errJson.error) ||
+            (res.status === 403
+              ? `${LUXO_MODELS[targetModelId]?.name || targetModelId} modeli kilitli (API anahtarı gerekli).`
+              : `HTTP ${res.status} yanıt hatası.`);
+          return;
+        }
 
         const contentType = res.headers.get('content-type') || '';
         if (contentType.includes('text/event-stream') && res.body) {
@@ -2483,6 +3404,9 @@ export default function App() {
                 if (parsed.meta) {
                   paneThinking = parsed.meta.thinkingSteps;
                   paneCitations = parsed.meta.citations;
+                  if (parsed.meta.tokenUsage) {
+                    paneTokenUsage = parsed.meta.tokenUsage as TokenUsageMetadata;
+                  }
                 }
                 if (parsed.text) {
                   paneText += sanitizeLuxoBrand(parsed.text);
@@ -2492,6 +3416,7 @@ export default function App() {
                   content: paneText,
                   thinkingSteps: paneThinking,
                   citations: paneCitations,
+                  tokenUsage: paneTokenUsage,
                   latencyMs: Date.now() - startedAt,
                   isStreaming: true,
                 };
@@ -2506,32 +3431,32 @@ export default function App() {
           paneText = sanitizeLuxoBrand(data.text || 'Yanıt oluşturuldu.');
           paneThinking = data.thinkingSteps;
           paneCitations = data.citations;
+          if (data.tokenUsage) {
+            paneTokenUsage = data.tokenUsage as TokenUsageMetadata;
+          }
         }
-      } catch {
-        const fb = generateLocalSmartResponse(cleanUserText, targetModelId, {
-          webSearch: options?.webSearch,
-          deepReasoning: options?.deepReasoning,
-          synthesisMode: options?.synthesisMode,
-          conversationHistory: updatedMessages.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-          attachmentInfo: inlineAttachment
-            ? {
-                name: inlineAttachment.name,
-                mimeType: inlineAttachment.mimeType,
-              }
-            : undefined,
-        });
-        paneText = fb.text;
-        paneThinking = fb.thinkingSteps;
-        paneCitations = fb.citations;
+      } catch (err) {
+        paneText =
+          err instanceof Error && err.message
+            ? `Model API bağlantısında sorun: ${err.message}`
+            : 'Model sunucusuna bağlanılamadı.';
       } finally {
+        if (paneTokenUsage) {
+          setDailyTokenUsage((prev) =>
+            recordModelTokenUsage(
+              prev,
+              targetModelId,
+              paneTokenUsage!.inputTokens,
+              paneTokenUsage!.outputTokens
+            )
+          );
+        }
         panes[paneIdx] = {
           modelId: targetModelId,
           content: cleanAssistantResponse(paneText, true),
           thinkingSteps: paneThinking,
           citations: paneCitations,
+          tokenUsage: paneTokenUsage,
           latencyMs: Date.now() - startedAt,
           isStreaming: false,
         };
@@ -2571,7 +3496,7 @@ export default function App() {
 
   return (
     <MotionConfig reducedMotion="user">
-    <div className="w-full h-screen overflow-hidden flex flex-col bg-white dark:bg-[#18181b] text-neutral-900 dark:text-neutral-100">
+    <div className="w-full h-screen overflow-hidden flex flex-col bg-[#f8fafc] dark:bg-[#0b0d14] text-slate-900 dark:text-slate-100">
       {sharedIncoming && (
         <div className="px-4 py-2.5 bg-indigo-600/10 dark:bg-indigo-500/15 border-b border-indigo-500/25 flex items-center justify-between gap-3 shrink-0 z-30">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -2862,139 +3787,546 @@ export default function App() {
           </div>
         </div>
       )}
-      {currentView !== 'welcome' &&
-        currentView !== 'evolution' &&
-        currentView !== 'hub' && (
-          <TrainingConsentBanner
-            consentStatus={trainingConsent}
-            onSelectConsent={handleSelectTrainingConsent}
-            onOpenEvolutionHub={() => setCurrentView('evolution')}
-          />
-        )}
-      <div className="w-full flex-1 flex flex-col relative overflow-hidden transition-all min-h-0">
-        {currentView === 'welcome' && (
-          <WelcomeView
-            onGoogleSignIn={handleFirebaseGoogleSignIn}
-            onOpenAuthModal={() => setIsAuthModalOpen(true)}
-            onOpenUpgradeModal={() => setIsUpgradeModalOpen(true)}
-            onSkipToGuest={handleSkipToGuest}
-          />
-        )}
-
-        {currentView === 'chat' && (
-          <ChatWorkspace
-            onOpenExtendedCatalog={() => {
-              setSettingsSubModal('all_models');
-              setCurrentView('settings');
+      <div className="w-full flex-1 flex flex-row relative overflow-hidden transition-all min-h-0">
+        {currentView !== 'welcome' && (
+          <SidebarDrawer
+            isOpen={isSidebarOpen}
+            isDesktopOpen={isDesktopSidebarOpen}
+            onToggleDesktop={() => setIsDesktopSidebarOpen((prev) => !prev)}
+            onClose={() => setIsSidebarOpen(false)}
+            currentView={currentView}
+            providerStatus={providerStatus}
+            chats={chats}
+            activeChatId={activeChatId}
+            onSelectChat={(id) => {
+              setActiveChatId(id);
+              setCurrentView('chat');
             }}
-            showExtendedCatalog={isCatalogUnlocked && showExtendedModelsInChat}
-            isCatalogUnlocked={isCatalogUnlocked}
-            currentChat={activeChat}
-            activeModelId={activeModelId}
-            activeProject={activeProject}
-            onClearActiveProject={() => setActiveProjectId(null)}
-            onSelectModel={setActiveModelId}
-            onSendMessage={(text, file, opts) =>
-              handleSendMessage(text, file, opts)
-            }
-            onCompareMessage={(text, mA, mB, file, opts) =>
-              handleCompareMessage(text, mA, mB, file, opts)
-            }
-            onSelectComparisonWinner={handleSelectComparisonWinner}
-            onToggleLikeMessage={handleToggleLikeMessage}
-            onToggleDislikeMessage={handleToggleDislikeMessage}
-            onModelFeedback={handleModelFeedback}
-            onRegenerate={() => {
-              if (activeChat && activeChat.messages.length >= 2) {
-                const lastUser = [...activeChat.messages]
-                  .reverse()
-                  .find((m) => m.role === 'user');
-                const lastAssistant = [...activeChat.messages]
-                  .reverse()
-                  .find((m) => m.role === 'assistant');
-                if (lastUser) {
-                  if (lastAssistant) {
-                    submitConsentedChatSignal(
-                      lastUser.content,
-                      lastAssistant.content,
-                      lastAssistant.modelId || activeModelId,
-                      'regenerated'
-                    );
-                  }
-                  handleSendMessage(lastUser.content);
-                }
-              }
-            }}
-            onOpenSidebar={() => setIsSidebarOpen(true)}
-            onOpenNewChat={handleCreateNewChat}
-            onOpenUpgradeModal={() => setIsUpgradeModalOpen(true)}
-            onOpenVoiceModal={() => setIsVoiceModalOpen(true)}
-            onOpenVoiceCommands={() => setIsVoiceCommandModalOpen(true)}
+            onNewChat={handleCreateNewChat}
+            onDeleteChat={handleDeleteChat}
+            onOpenHome={() => setCurrentView('home')}
+            onOpenModels={() => setCurrentView('models')}
+            onOpenArena={() => setCurrentView('arena')}
+            onOpenAssistants={() => setCurrentView('assistants')}
+            onOpenKnowledge={() => setCurrentView('knowledge')}
+            onOpenPrompts={() => setCurrentView('prompts')}
+            onOpenWorkflows={() => setCurrentView('workflows')}
+            onOpenAdmin={() => setCurrentView('admin')}
+            isAdminUser={isAdminUser}
+            zeroCostEnabled={zeroCostPolicy.enabled}
+            connectedProviderCount={connectedProviderCount}
+            onOpenImages={() => setCurrentView('images')}
             onOpenDashboard={() => handleOpenDashboard('overview')}
-            onOpenImagesView={() => setCurrentView('images')}
-            onOpenEvolutionView={() => setCurrentView('evolution')}
-            onOpenHubView={() => {
+            onOpenVoiceCommands={() => setIsVoiceCommandModalOpen(true)}
+            onSignOut={handleSignOut}
+            onOpenEvolution={() => setCurrentView('evolution')}
+            onOpenHub={() => {
               setHubInitialTab(undefined);
               setCurrentView('hub');
             }}
-            onOpenContentStudioView={() => {
+            onOpenContentStudio={() => {
               setHubInitialTab('content-studio');
               setCurrentView('hub');
             }}
-            onOpenSocialView={() => setCurrentView('social')}
+            onOpenSocial={() => setCurrentView('social')}
+            onOpenGmail={() => setIsGmailModalOpen(true)}
+            onOpenLibrary={() => setCurrentView('library')}
+            onOpenProjects={() => setCurrentView('projects')}
+            onOpenStudio={() => setCurrentView('studio')}
+            onOpenSettings={(sub) => {
+              setSettingsSubModal(sub || null);
+              setCurrentView('settings');
+            }}
+            onOpenKeyboardShortcuts={() => setIsKeyboardShortcutsOpen(true)}
+            onOpenFeedback={() => setIsFeedbackModalOpen(true)}
             unreadNotificationCount={unreadNotificationCount}
             onOpenNotifications={() => setIsNotificationsOpen(true)}
-            evolutionGeneration={evolutionState.generation}
-            adaptiveSuggestions={evolutionState.adaptiveSuggestions}
+            onSelectModel={setActiveModelId}
             onOpenAuthModal={() => setIsAuthModalOpen(true)}
-            onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+            routines={routines}
+            onToggleRoutine={(id) =>
+              setRoutines((prev) =>
+                prev.map((r) => (r.id === id ? { ...r, active: !r.active } : r))
+              )
+            }
+            onAddRoutine={(newR) =>
+              setRoutines((prev) => [
+                { ...newR, id: `routine-${Date.now()}` },
+                ...prev,
+              ])
+            }
+            onRunRoutineNow={(routine) => {
+              setActiveModelId(routine.modelId);
+              setCurrentView('chat');
+              handleSendMessage(routine.prompt);
+            }}
+            user={user}
             isDarkTheme={Boolean(isDarkTheme)}
             onToggleTheme={() =>
               handleUpdateUser({ theme: isDarkTheme ? 'light' : 'dark' })
             }
-            externalCompareRequest={compareTriggerCount}
-            onSynthesizeComparison={(question, mA, cA, mB, cB) => {
-              handleSendMessage(
-                buildConsensusFusionPrompt(question, mA, cA, mB, cB)
-              );
-            }}
-            onSaveToLibrary={(title, content) => {
-              setLibraryItems((prev) => [
-                {
-                  id: `lib-${Date.now()}`,
-                  title: title.slice(0, 42),
-                  summary: content.slice(0, 90) + '...',
-                  content,
-                  type: 'document',
-                  tab: 'Kaydedilenler',
-                  createdAt: 'Az önce',
-                  isFavorite: true,
-                },
-                ...prev,
-              ]);
-            }}
-            collabParticipantsCount={collab.participants.length}
-            collabRoomId={collab.roomId}
-            isCollabConnected={collab.isConnected}
-            onOpenCollabPanel={() => setIsCollabPanelOpen(true)}
-            onTypingActivity={(isTyping) =>
-              collab.updatePresence({ isTyping })
-            }
-            cloudSyncVisible={Boolean(
-              lastCloudSync && activeChatId && lastCloudSync.chatId === activeChatId
-            )}
-            user={user}
-            isStreaming={isStreaming}
           />
         )}
 
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 relative overflow-hidden">
+          {currentView === 'welcome' && (
+            <WelcomeView
+              onGoogleSignIn={handleFirebaseGoogleSignIn}
+              onOpenAuthModal={() => setIsAuthModalOpen(true)}
+              onOpenUpgradeModal={() => setIsUpgradeModalOpen(true)}
+              onSkipToGuest={handleSkipToGuest}
+            />
+          )}
+
+          {currentView === 'chat' && (
+            <ChatWorkspace
+              onOpenExtendedCatalog={() => {
+                setSettingsSubModal('all_models');
+                setCurrentView('settings');
+              }}
+              showExtendedCatalog={isCatalogUnlocked && showExtendedModelsInChat}
+              isCatalogUnlocked={isCatalogUnlocked}
+              providerStatus={providerStatus}
+              providersLoaded={providersLoaded}
+              catalogModels={catalogModels}
+              zeroCostEnabled={zeroCostPolicy.enabled}
+              favoriteModelIds={favoriteModelIds}
+              recentModelIds={recentModelIds}
+              tokenOverrides={tokenOverrides}
+              dailyTokenUsage={dailyTokenUsage}
+              onUpdateModelTokenOverride={handleUpdateModelTokenOverride}
+              onResetModelTokenOverride={handleResetModelTokenOverride}
+              onOpenProviderSettings={() => {
+                setSettingsSubModal('ai_tuning');
+                setCurrentView('settings');
+              }}
+              currentChat={activeChat}
+              activeModelId={activeModelId}
+              activeProject={activeProject}
+              onClearActiveProject={() => setActiveProjectId(null)}
+              onSelectModel={setActiveModelId}
+              onSendMessage={(text, file, opts) =>
+                handleSendMessage(text, file, opts)
+              }
+              onStopGenerating={handleStopGenerating}
+              onEditAndRerunMessage={handleEditAndRerunMessage}
+              knowledgeDocs={knowledgeDocs}
+              attachedKnowledgeDocIds={attachedKnowledgeDocIds}
+              onToggleKnowledgeDoc={handleToggleAttachKnowledgeDoc}
+              onToggleRightPanel={() => setIsRightPanelOpen((prev) => !prev)}
+              isRightPanelOpen={isRightPanelOpen}
+              activeAssistant={activeAssistant}
+              onCompareMessage={(text, mA, mB, file, opts) =>
+                handleCompareMessage(text, mA, mB, file, opts)
+              }
+              onSelectComparisonWinner={handleSelectComparisonWinner}
+              onToggleLikeMessage={handleToggleLikeMessage}
+              onToggleDislikeMessage={handleToggleDislikeMessage}
+              onModelFeedback={handleModelFeedback}
+              onRegenerate={() => {
+                if (activeChat && activeChat.messages.length >= 2) {
+                  const lastUser = [...activeChat.messages]
+                    .reverse()
+                    .find((m) => m.role === 'user');
+                  const lastAssistant = [...activeChat.messages]
+                    .reverse()
+                    .find((m) => m.role === 'assistant');
+                  if (lastUser) {
+                    if (lastAssistant) {
+                      submitConsentedChatSignal(
+                        lastUser.content,
+                        lastAssistant.content,
+                        lastAssistant.modelId || activeModelId,
+                        'regenerated'
+                      );
+                    }
+                    handleSendMessage(lastUser.content);
+                  }
+                }
+              }}
+              onOpenSidebar={() => {
+                if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+                  setIsDesktopSidebarOpen((prev) => !prev);
+                } else {
+                  setIsSidebarOpen(true);
+                }
+              }}
+              onOpenNewChat={handleCreateNewChat}
+              onOpenUpgradeModal={() => setIsUpgradeModalOpen(true)}
+              onOpenVoiceModal={() => setIsVoiceModalOpen(true)}
+              onOpenVoiceCommands={() => setIsVoiceCommandModalOpen(true)}
+              onOpenDashboard={() => handleOpenDashboard('overview')}
+              onOpenImagesView={() => setCurrentView('images')}
+              onOpenEvolutionView={() => setCurrentView('evolution')}
+              onOpenHubView={() => {
+                setHubInitialTab(undefined);
+                setCurrentView('hub');
+              }}
+              onOpenContentStudioView={() => {
+                setHubInitialTab('content-studio');
+                setCurrentView('hub');
+              }}
+              onOpenSocialView={() => setCurrentView('social')}
+              unreadNotificationCount={unreadNotificationCount}
+              onOpenNotifications={() => setIsNotificationsOpen(true)}
+              evolutionGeneration={evolutionState.generation}
+              adaptiveSuggestions={evolutionState.adaptiveSuggestions}
+              onOpenAuthModal={() => setIsAuthModalOpen(true)}
+              onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+              isDarkTheme={Boolean(isDarkTheme)}
+              onToggleTheme={() =>
+                handleUpdateUser({ theme: isDarkTheme ? 'light' : 'dark' })
+              }
+              externalCompareRequest={compareTriggerCount}
+              onSynthesizeComparison={(question, mA, cA, mB, cB) => {
+                handleSendMessage(
+                  buildConsensusFusionPrompt(question, mA, cA, mB, cB)
+                );
+              }}
+              onSaveToLibrary={(title, content) => {
+                setLibraryItems((prev) => [
+                  {
+                    id: `lib-${Date.now()}`,
+                    title: title.slice(0, 42),
+                    summary: content.slice(0, 90) + '...',
+                    content,
+                    type: 'document',
+                    tab: 'Kaydedilenler',
+                    createdAt: 'Az önce',
+                    isFavorite: true,
+                  },
+                  ...prev,
+                ]);
+              }}
+              collabParticipantsCount={collab.participants.length}
+              collabRoomId={collab.roomId}
+              isCollabConnected={collab.isConnected}
+              onOpenCollabPanel={() => setIsCollabPanelOpen(true)}
+              onTypingActivity={(isTyping) =>
+                collab.updatePresence({ isTyping })
+              }
+              cloudSyncVisible={Boolean(
+                lastCloudSync && activeChatId && lastCloudSync.chatId === activeChatId
+              )}
+              user={user}
+              isStreaming={isStreaming}
+            />
+          )}
+
         <React.Suspense
           fallback={
-            <div className="flex-1 flex items-center justify-center text-xs font-semibold text-neutral-500 dark:text-neutral-400">
+            <div className="flex-1 flex items-center justify-center text-xs font-semibold text-slate-500 dark:text-slate-400">
               Modül yükleniyor...
             </div>
           }
         >
+          {currentView === 'home' && (
+            <HomeDashboardView
+              user={user}
+              activeModelId={activeModelId}
+              onSelectModel={setActiveModelId}
+              catalogModels={catalogModels}
+              providers={platformProviders}
+              providerStatus={providerStatus}
+              zeroCostEnabled={zeroCostPolicy.enabled}
+              favoriteModelIds={favoriteModelIds}
+              recentModelIds={recentModelIds}
+              assistants={assistants}
+              chats={chats}
+              prompts={promptTemplates}
+              projects={projects}
+              knowledgeDocs={knowledgeDocs}
+              attachedKnowledgeDocIds={attachedKnowledgeDocIds}
+              onStartChat={(promptText, file, opts) => {
+                if (opts?.assistantId) {
+                  setActiveAssistantId(opts.assistantId);
+                }
+                setCurrentView('chat');
+                void handleSendMessage(promptText, file, {
+                  webSearch: opts?.webSearch,
+                  deepReasoning: opts?.deepReasoning,
+                  assistantId: opts?.assistantId,
+                  forceNewChat: true,
+                });
+              }}
+              onSelectChat={(chatId) => {
+                setActiveChatId(chatId);
+                setCurrentView('chat');
+              }}
+              onSelectAssistantForChat={(assistant) => {
+                setActiveAssistantId(assistant.id);
+                if (assistant.defaultModelId) {
+                  setActiveModelId(assistant.defaultModelId as LuxoModelId);
+                }
+                handleCreateNewChat();
+              }}
+              onSelectPromptForChat={(prm) => {
+                if (prm.recommendedModelId) {
+                  setActiveModelId(prm.recommendedModelId as LuxoModelId);
+                }
+                setPromptTemplates((prev) =>
+                  prev.map((item) =>
+                    item.id === prm.id
+                      ? { ...item, usageCount: item.usageCount + 1 }
+                      : item
+                  )
+                );
+                setCurrentView('chat');
+                void handleSendMessage(prm.content, undefined, {
+                  forceNewChat: true,
+                });
+              }}
+              onSelectProject={(projectId) => {
+                setActiveProjectId(projectId);
+                setCurrentView('chat');
+              }}
+              onNavigateView={(view) => setCurrentView(view)}
+              onOpenSidebar={() => {
+                if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+                  setIsDesktopSidebarOpen((prev) => !prev);
+                } else {
+                  setIsSidebarOpen(true);
+                }
+              }}
+              onToggleRightPanel={() => setIsRightPanelOpen((prev) => !prev)}
+              isRightPanelOpen={isRightPanelOpen}
+              onOpenAuthModal={() => setIsAuthModalOpen(true)}
+              onOpenSettings={() => {
+                setSettingsSubModal('ai_tuning');
+                setCurrentView('settings');
+              }}
+            />
+          )}
+
+          {currentView === 'models' && (
+            <ModelCenterView
+              catalogModels={catalogModels}
+              providers={platformProviders}
+              zeroCostEnabled={zeroCostPolicy.enabled}
+              favoriteModelIds={favoriteModelIds}
+              onToggleFavorite={handleToggleFavoriteModel}
+              onLaunchChat={(modelId) => {
+                setActiveModelId(modelId);
+                trackRecentModel(modelId);
+                handleCreateNewChat();
+              }}
+              onLaunchArenaWithModel={(modelId) => {
+                const partner =
+                  catalogModels.find(
+                    (m) =>
+                      m.id !== modelId &&
+                      m.executable &&
+                      (!zeroCostPolicy.enabled || m.zeroCostAllowed)
+                  )?.id || 'gemini-2.5-flash';
+                setArenaInitialModels([modelId, partner]);
+                setCurrentView('arena');
+              }}
+              onOpenSidebar={() => {
+                if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+                  setIsDesktopSidebarOpen((prev) => !prev);
+                } else {
+                  setIsSidebarOpen(true);
+                }
+              }}
+              onBackHome={() => setCurrentView('home')}
+            />
+          )}
+
+          {currentView === 'arena' && (
+            <ModelArenaView
+              catalogModels={catalogModels}
+              zeroCostEnabled={zeroCostPolicy.enabled}
+              knowledgeDocs={knowledgeDocs}
+              initialModelIds={arenaInitialModels}
+              arenaHistory={arenaHistory}
+              onSaveArenaRun={(run) => {
+                setArenaHistory((prev) => [run, ...prev.filter((r) => r.id !== run.id)].slice(0, 20));
+                for (const mId of run.modelIds) trackRecentModel(mId);
+                if (!user.isGuest && user.emailVerified) {
+                  const summary = run.responses
+                    .map((r) => `${r.modelName}: ${r.content || r.error || ''}`)
+                    .join('\n\n');
+                  void syncArenaHistoryToFirestore({
+                    id: run.id,
+                    prompt: run.prompt,
+                    modelIds: run.modelIds,
+                    winnerModelId: run.winnerModelId,
+                    summaryText: summary,
+                  }).catch(() => {});
+                }
+              }}
+              onSelectArenaWinner={(runId, winnerModelId) => {
+                setArenaHistory((prev) =>
+                  prev.map((r) =>
+                    r.id === runId ? { ...r, winnerModelId } : r
+                  )
+                );
+                const run = arenaHistory.find((r) => r.id === runId);
+                if (run && !user.isGuest && user.emailVerified) {
+                  const summary = run.responses
+                    .map((r) => `${r.modelName}: ${r.content || r.error || ''}`)
+                    .join('\n\n');
+                  void syncArenaHistoryToFirestore({
+                    id: run.id,
+                    prompt: run.prompt,
+                    modelIds: run.modelIds,
+                    winnerModelId,
+                    summaryText: summary,
+                  }).catch(() => {});
+                }
+              }}
+              onOpenSidebar={() => {
+                if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+                  setIsDesktopSidebarOpen((prev) => !prev);
+                } else {
+                  setIsSidebarOpen(true);
+                }
+              }}
+              onBackHome={() => setCurrentView('home')}
+            />
+          )}
+
+          {(currentView === 'assistants' ||
+            currentView === 'knowledge' ||
+            currentView === 'prompts' ||
+            currentView === 'workflows') && (
+            <V2StudiosView
+              activeSection={currentView}
+              onSwitchSection={(section) => setCurrentView(section)}
+              onOpenSidebar={() => {
+                if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+                  setIsDesktopSidebarOpen((prev) => !prev);
+                } else {
+                  setIsSidebarOpen(true);
+                }
+              }}
+              onBackHome={() => setCurrentView('home')}
+              catalogModels={catalogModels}
+              assistants={assistants}
+              onCreateAssistant={(draft) => {
+                const now = Date.now();
+                const created: AssistantPersona = {
+                  ...draft,
+                  id: `ast-${now}`,
+                  createdAt: now,
+                  updatedAt: now,
+                };
+                setAssistants((prev) => [created, ...prev]);
+              }}
+              onDeleteAssistant={(id) => {
+                setAssistants((prev) => prev.filter((a) => a.id !== id));
+                if (activeAssistantId === id) setActiveAssistantId(null);
+              }}
+              onLaunchAssistantInChat={(assistant) => {
+                setActiveAssistantId(assistant.id);
+                if (assistant.defaultModelId) {
+                  setActiveModelId(assistant.defaultModelId as LuxoModelId);
+                }
+                handleCreateNewChat();
+              }}
+              projects={projects}
+              activeProjectId={activeProjectId}
+              onSelectProject={(id) => {
+                setActiveProjectId(id);
+                if (id) setCurrentView('chat');
+              }}
+              onCreateProject={(proj) => {
+                const created: LuxoProject = {
+                  ...proj,
+                  id: `proj-${Date.now()}`,
+                  updatedAt: Date.now(),
+                  filesCount: 1,
+                };
+                setProjects((prev) => [created, ...prev]);
+                setActiveProjectId(created.id);
+                if (!user.isGuest && user.emailVerified) {
+                  void syncProjectV2ToFirestore(created).catch(() => {});
+                }
+              }}
+              knowledgeDocs={knowledgeDocs}
+              attachedKnowledgeDocIds={attachedKnowledgeDocIds}
+              onToggleAttachKnowledgeDoc={handleToggleAttachKnowledgeDoc}
+              onRefreshKnowledgeDocs={refreshKnowledgeDocs}
+              prompts={promptTemplates}
+              onCreatePrompt={(draft) => {
+                const created: PromptTemplateRecord = {
+                  ...draft,
+                  id: `prm-${Date.now()}`,
+                  usageCount: 0,
+                  createdAt: Date.now(),
+                };
+                setPromptTemplates((prev) => [created, ...prev]);
+              }}
+              onToggleFavoritePrompt={(id) => {
+                setPromptTemplates((prev) =>
+                  prev.map((p) =>
+                    p.id === id ? { ...p, isFavorite: !p.isFavorite } : p
+                  )
+                );
+              }}
+              onDeletePrompt={(id) => {
+                setPromptTemplates((prev) => prev.filter((p) => p.id !== id));
+              }}
+              onLaunchPromptInChat={(prm) => {
+                if (prm.recommendedModelId) {
+                  setActiveModelId(prm.recommendedModelId as LuxoModelId);
+                }
+                setPromptTemplates((prev) =>
+                  prev.map((item) =>
+                    item.id === prm.id
+                      ? { ...item, usageCount: item.usageCount + 1 }
+                      : item
+                  )
+                );
+                setCurrentView('chat');
+                void handleSendMessage(prm.content, undefined, {
+                  forceNewChat: true,
+                });
+              }}
+              workflows={workflows}
+              onCreateWorkflow={(draft) => {
+                const created: WorkflowDefinition = {
+                  ...draft,
+                  id: `wf-${Date.now()}`,
+                  createdAt: Date.now(),
+                };
+                setWorkflows((prev) => [created, ...prev]);
+              }}
+              onSaveWorkflowResult={(wfId, output) => {
+                setWorkflows((prev) =>
+                  prev.map((w) =>
+                    w.id === wfId
+                      ? { ...w, lastRunAt: Date.now(), lastRunOutput: output }
+                      : w
+                  )
+                );
+              }}
+              onSendWorkflowOutputToChat={(title, output) => {
+                setCurrentView('chat');
+                void handleSendMessage(
+                  `Review and expand this "${title}" workflow output:\n\n${output}`,
+                  undefined,
+                  { forceNewChat: true }
+                );
+              }}
+            />
+          )}
+
+          {currentView === 'admin' && (
+            <AdminDashboardView
+              onOpenSidebar={() => {
+                if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+                  setIsDesktopSidebarOpen((prev) => !prev);
+                } else {
+                  setIsSidebarOpen(true);
+                }
+              }}
+              onBackHome={() => setCurrentView('home')}
+              onOpenAuthModal={() => setIsAuthModalOpen(true)}
+              onCatalogRefresh={refreshPlatformCatalog}
+            />
+          )}
+
           {currentView === 'studio' && (
             <ArgonCodeStudio
               onBack={() => setCurrentView('chat')}
@@ -3224,6 +4556,7 @@ export default function App() {
               onSelectModelFromSettings={handleSelectModelFromSettings}
               showExtendedModelsInChat={showExtendedModelsInChat}
               onToggleExtendedModelsInChat={setShowExtendedModelsInChat}
+              providerStatus={providerStatus}
             />
           )}
         </React.Suspense>
@@ -3231,6 +4564,7 @@ export default function App() {
         {/* Quick-Access Floating Feedback Button (Scoped to clean Chat view so it never overlaps studio/settings headers or modals) */}
         {currentView === 'chat' &&
           !isSidebarOpen &&
+          !isRightPanelOpen &&
           !isCollabPanelOpen &&
           !isUpgradeModalOpen &&
           !isFeedbackModalOpen &&
@@ -3254,324 +4588,336 @@ export default function App() {
               </span>
             </button>
           )}
+        </div>
 
-        <SidebarDrawer
-          isOpen={isSidebarOpen}
-          onClose={() => setIsSidebarOpen(false)}
-          chats={chats}
-          activeChatId={activeChatId}
-          onSelectChat={(id) => {
-            setActiveChatId(id);
-            setCurrentView('chat');
-          }}
-          onNewChat={handleCreateNewChat}
-          onDeleteChat={handleDeleteChat}
-          onOpenImages={() => setCurrentView('images')}
-          onOpenDashboard={() => handleOpenDashboard('overview')}
-          onOpenVoiceCommands={() => setIsVoiceCommandModalOpen(true)}
-          onSignOut={handleSignOut}
-          onOpenEvolution={() => setCurrentView('evolution')}
-          onOpenHub={() => {
-            setHubInitialTab(undefined);
-            setCurrentView('hub');
-          }}
-          onOpenContentStudio={() => {
-            setHubInitialTab('content-studio');
-            setCurrentView('hub');
-          }}
-          onOpenSocial={() => setCurrentView('social')}
-          onOpenGmail={() => setIsGmailModalOpen(true)}
-          onOpenLibrary={() => setCurrentView('library')}
-          onOpenProjects={() => setCurrentView('projects')}
-          onOpenStudio={() => setCurrentView('studio')}
-          onOpenSettings={(sub) => {
-            setSettingsSubModal(sub || null);
-            setCurrentView('settings');
-          }}
-          onOpenKeyboardShortcuts={() => setIsKeyboardShortcutsOpen(true)}
-          onOpenFeedback={() => setIsFeedbackModalOpen(true)}
-          unreadNotificationCount={unreadNotificationCount}
-          onOpenNotifications={() => setIsNotificationsOpen(true)}
-          onSelectModel={setActiveModelId}
-          onOpenAuthModal={() => setIsAuthModalOpen(true)}
-          routines={routines}
-          onToggleRoutine={(id) =>
-            setRoutines((prev) =>
-              prev.map((r) => (r.id === id ? { ...r, active: !r.active } : r))
-            )
-          }
-          onAddRoutine={(newR) =>
-            setRoutines((prev) => [
-              { ...newR, id: `routine-${Date.now()}` },
-              ...prev,
-            ])
-          }
-          onRunRoutineNow={(routine) => {
-            setActiveModelId(routine.modelId);
-            setCurrentView('chat');
-            handleSendMessage(routine.prompt);
-          }}
-          user={user}
-          isDarkTheme={Boolean(isDarkTheme)}
-          onToggleTheme={() =>
-            handleUpdateUser({ theme: isDarkTheme ? 'light' : 'dark' })
-          }
-        />
-
-        <UpgradeModal
-          isOpen={isUpgradeModalOpen}
-          onClose={() => setIsUpgradeModalOpen(false)}
-          onSuccess={handleUpgradeSuccess}
-          isUnlockedDev={user.isUnlockedDev}
-          isUnlockedDevHelper={user.isUnlockedDevHelper}
-        />
-
-        <FeedbackModal
-          isOpen={isFeedbackModalOpen}
-          onClose={() => setIsFeedbackModalOpen(false)}
-          activeModelId={activeModelId}
-          onSubmitFeedback={async (category, subject, message, details) => {
-            await fetch('/api/feedback', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ type: category, subject, message, details }),
-            }).catch(() => {});
-            await submitFeedbackToFirestore(
-              category,
-              subject,
-              message,
-              details
-            ).catch(() => {});
-
-            const targetModelId =
-              (details?.modelId && details.modelId in LUXO_MODELS
-                ? (details.modelId as LuxoModelId)
-                : activeModelId) || 'luxo-auto-router';
-            const signalRating: 'thumbs_up' | 'thumbs_down' =
-              category === 'Hata Bildirimi' || (details?.rating ?? 5) <= 3
-                ? 'thumbs_down'
-                : 'thumbs_up';
-            const signalSnippet = `${category}${
-              details?.errorType ? ` [${details.errorType}]` : ''
-            }: ${subject} — ${message}`.slice(0, 320);
-
-            handleModelFeedback(
-              `feedback-${Date.now()}`,
-              targetModelId,
-              signalRating,
-              signalSnippet
-            );
-
-            pushNotification({
-              category: 'system_update',
-              title: 'Geri Bildirim Model İyileştirme Motoruna İşlendi',
-              body: `${LUXO_MODELS[targetModelId]?.name || targetModelId} için rapor (${category}) Öz-Gelişim döngüsüne anlık olarak eklendi.`,
-              targetView: 'evolution',
-            });
-          }}
-        />
-
-        <AuthModal
-          isOpen={isAuthModalOpen}
-          onClose={() => setIsAuthModalOpen(false)}
-          onGoogleSignIn={handleFirebaseGoogleSignIn}
-          onEmailSignIn={async (email, pass) => {
-            await loginWithEmailPassword(email, pass);
-          }}
-          onEmailRegister={registerWithEmailPassword}
-          onPasswordReset={requestPasswordReset}
-          onOpenUpgradeModal={() => setIsUpgradeModalOpen(true)}
-          isLimitReachedNotice={
-            user.isGuest && user.guestMessageCount >= GUEST_MESSAGE_LIMIT
-          }
-        />
-
-        <VoiceModal
-          isOpen={isVoiceModalOpen}
-          onClose={() => setIsVoiceModalOpen(false)}
-          modelId={activeModelId}
-          selectedVoiceName={user.voiceName || 'Breeze'}
-          selectedVoiceRate={user.voiceRate || 1.0}
-          onChangeVoice={(voiceName, rate) =>
-            handleUpdateUser({
-              voiceName,
-              ...(typeof rate === 'number' ? { voiceRate: rate } : {}),
-            })
-          }
-          onUserSpoke={async (spoken) => {
-            handleSendMessage(spoken);
-            try {
-              const res = await fetch('/api/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  messages: [{ role: 'user', content: spoken }],
-                  modelId: activeModelId,
-                  customInstructions: user.customInstructions,
-                  customTone: user.customTone,
-                  memoryItems,
-                  stream: false,
-                }),
-              });
-              const data = await res.json();
-              return cleanAssistantResponse(
-                data.text ||
-                  `Luxo AI (${LUXO_MODELS[activeModelId].name}) yanıtınızı hazırladı.`
-              );
-            } catch {
-              return `Luxo AI (${LUXO_MODELS[activeModelId].name}) sizi dinliyor ve yanıtınızı sohbete ekledi.`;
+        {(currentView === 'home' || currentView === 'chat') && (
+          <RightContextPanel
+            isOpen={isRightPanelOpen}
+            onClose={() => setIsRightPanelOpen(false)}
+            activeModelId={activeModelId}
+            catalogModels={catalogModels}
+            providerStatus={providerStatus}
+            zeroCostEnabled={zeroCostPolicy.enabled}
+            activeAssistant={activeAssistant}
+            assistants={assistants}
+            onSelectAssistant={setActiveAssistantId}
+            knowledgeDocs={knowledgeDocs}
+            attachedKnowledgeDocIds={attachedKnowledgeDocIds}
+            onToggleKnowledgeDoc={handleToggleAttachKnowledgeDoc}
+            sessionTokens={
+              activeChat
+                ? activeChat.messages.reduce(
+                    (acc, m) => acc + (m.tokenUsage?.totalTokens || 0),
+                    0
+                  )
+                : 0
             }
-          }}
-        />
-
-        <CollabWorkspacePanel
-          isOpen={isCollabPanelOpen}
-          onClose={() => setIsCollabPanelOpen(false)}
-          roomId={collab.roomId}
-          isConnected={collab.isConnected}
-          clientId={collab.clientId}
-          participants={collab.participants}
-          sharedDoc={collab.sharedDoc}
-          onChangeRoom={collab.changeRoom}
-          onUpdateSharedDoc={collab.updateSharedDoc}
-          onUpdateTyping={(isTyping) =>
-            collab.updatePresence({ activeSurface: 'doc', isTyping })
-          }
-          onSendDocToChat={(promptText) => {
-            setCurrentView('chat');
-            handleSendMessage(promptText);
-          }}
-        />
-
-        <CommandPaletteModal
-          isOpen={isCommandPaletteOpen}
-          onClose={() => setIsCommandPaletteOpen(false)}
-          user={user}
-          activeModelId={activeModelId}
-          isDarkTheme={Boolean(isDarkTheme)}
-          chats={chats}
-          libraryItems={libraryItems}
-          projects={projects}
-          studioArticles={studioArticles}
-          onSelectModel={(modelId) => {
-            setActiveModelId(modelId);
-            setCurrentView('chat');
-          }}
-          onSelectChat={(chatId) => {
-            setActiveChatId(chatId);
-            setCurrentView('chat');
-          }}
-          onOpenLibrary={() => setCurrentView('library')}
-          onOpenProjects={() => setCurrentView('projects')}
-          onNewChat={handleCreateNewChat}
-          onOpenImages={() => setCurrentView('images')}
-          onOpenDashboard={() => handleOpenDashboard('overview')}
-          onOpenModelMetrics={() => handleOpenDashboard('model-metrics')}
-          onOpenVoiceCommands={() => setIsVoiceCommandModalOpen(true)}
-          onOpenEvolution={() => setCurrentView('evolution')}
-          onOpenHub={(tab) => {
-            setHubInitialTab(tab);
-            setCurrentView('hub');
-          }}
-          onOpenContentStudio={() => {
-            setHubInitialTab('content-studio');
-            setCurrentView('hub');
-          }}
-          onOpenGithubSettings={() => {
-            setSettingsSubModal('github');
-            setCurrentView('settings');
-          }}
-          onOpenSocial={() => setCurrentView('social')}
-          onOpenCollab={() => setIsCollabPanelOpen(true)}
-          onToggleTheme={() =>
-            handleUpdateUser({ theme: isDarkTheme ? 'light' : 'dark' })
-          }
-          onEnableCompareMode={() => {
-            setCurrentView('chat');
-            setCompareTriggerCount((c) => c + 1);
-          }}
-          onOpenAuthModal={() => setIsAuthModalOpen(true)}
-          onOpenUpgradeModal={() => setIsUpgradeModalOpen(true)}
-        />
-
-        <NotificationCenterModal
-          isOpen={isNotificationsOpen}
-          onClose={() => setIsNotificationsOpen(false)}
-          notifications={notifications}
-          preferences={notificationPrefs}
-          onUpdatePreferences={(partial) =>
-            setNotificationPrefs((prev) =>
-              normalizeNotificationPreferences({ ...prev, ...partial })
-            )
-          }
-          onMarkAsRead={(id) =>
-            setNotifications((prev) => markNotificationAsRead(prev, id))
-          }
-          onMarkAllAsRead={() =>
-            setNotifications((prev) => markAllNotificationsAsRead(prev))
-          }
-          onClearRead={() =>
-            setNotifications((prev) => clearReadNotifications(prev))
-          }
-          onNavigateView={(targetView) => setCurrentView(targetView)}
-        />
-
-        <VoiceCommandModal
-          isOpen={isVoiceCommandModalOpen}
-          onClose={() => setIsVoiceCommandModalOpen(false)}
-          onExecuteCommand={(action, rawText) => {
-            handleExecuteVoiceCommand(action, rawText);
-          }}
-        />
-
-        <GmailWorkspaceModal
-          isOpen={isGmailModalOpen}
-          onClose={() => setIsGmailModalOpen(false)}
-        />
-
-        <KeyboardShortcutsModal
-          isOpen={isKeyboardShortcutsOpen}
-          onClose={() => setIsKeyboardShortcutsOpen(false)}
-        />
-
-        {pendingVeoRequest && (
-          <CinematicMotionController
-            mode="modal"
-            value={cinematicMotion}
-            onChange={setCinematicMotion}
-            prompt={pendingVeoRequest.prompt}
-            onChangePrompt={(nextPrompt) =>
-              setPendingVeoRequest((prev) =>
-                prev ? { ...prev, prompt: nextPrompt } : null
-              )
+            todayTokens={Object.values(dailyTokenUsage).reduce(
+              (acc, d) => acc + (d.totalTokens || 0),
+              0
+            )}
+            dailyLimitTokens={
+              tokenOverrides[activeModelId]?.dailyTokenLimit ||
+              LUXO_MODELS[activeModelId]?.defaultDailyTokenLimit ||
+              400000
             }
-            highFidelity={pendingVeoRequest.highFidelity}
-            onToggleHighFidelity={(nextHiFi) =>
-              setPendingVeoRequest((prev) =>
-                prev ? { ...prev, highFidelity: nextHiFi } : null
-              )
-            }
-            isRendering={isStreaming}
-            onCancel={() => setPendingVeoRequest(null)}
-            onConfirmRender={() => {
-              const reqSnapshot = pendingVeoRequest;
-              const motionSnapshot = normalizeCinematicMotion(cinematicMotion);
-              setPendingVeoRequest(null);
-              if (reqSnapshot && reqSnapshot.prompt.trim()) {
-                void handleSendMessage(reqSnapshot.prompt, undefined, {
-                  webSearch: reqSnapshot.webSearch,
-                  deepReasoning: reqSnapshot.deepReasoning,
-                  synthesisMode: reqSnapshot.synthesisMode,
-                  highFidelity: reqSnapshot.highFidelity,
-                  motionControl: motionSnapshot,
-                  skipMotionController: true,
-                  forceMediaMode: 'video',
-                  referenceImageDataUrl: reqSnapshot.referenceImageDataUrl,
-                });
-              }
+            onOpenModels={() => setCurrentView('models')}
+            onOpenArena={() => {
+              setArenaInitialModels([
+                activeModelId,
+                catalogModels.find(
+                  (m) =>
+                    m.id !== activeModelId &&
+                    m.executable &&
+                    (!zeroCostPolicy.enabled || m.zeroCostAllowed)
+                )?.id || 'gemini-2.5-flash',
+              ]);
+              setCurrentView('arena');
+            }}
+            onOpenKnowledge={() => setCurrentView('knowledge')}
+            onOpenSettings={() => {
+              setSettingsSubModal('ai_tuning');
+              setCurrentView('settings');
             }}
           />
         )}
+
+        <React.Suspense fallback={null}>
+          {isUpgradeModalOpen && (
+            <UpgradeModal
+              isOpen={isUpgradeModalOpen}
+              onClose={() => setIsUpgradeModalOpen(false)}
+              onSuccess={handleUpgradeSuccess}
+              isUnlockedDev={user.isUnlockedDev}
+              isUnlockedDevHelper={user.isUnlockedDevHelper}
+            />
+          )}
+
+          {isFeedbackModalOpen && (
+            <FeedbackModal
+              isOpen={isFeedbackModalOpen}
+              onClose={() => setIsFeedbackModalOpen(false)}
+              activeModelId={activeModelId}
+              onSubmitFeedback={async (category, subject, message, details) => {
+                await fetch('/api/feedback', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ type: category, subject, message, details }),
+                }).catch(() => {});
+                await submitFeedbackToFirestore(
+                  category,
+                  subject,
+                  message,
+                  details
+                ).catch(() => {});
+
+                const targetModelId =
+                  (details?.modelId && details.modelId in LUXO_MODELS
+                    ? (details.modelId as LuxoModelId)
+                    : activeModelId) || 'luxo-auto-router';
+                const signalRating: 'thumbs_up' | 'thumbs_down' =
+                  category === 'Hata Bildirimi' || (details?.rating ?? 5) <= 3
+                    ? 'thumbs_down'
+                    : 'thumbs_up';
+                const signalSnippet = `${category}${
+                  details?.errorType ? ` [${details.errorType}]` : ''
+                }: ${subject} — ${message}`.slice(0, 320);
+
+                handleModelFeedback(
+                  `feedback-${Date.now()}`,
+                  targetModelId,
+                  signalRating,
+                  signalSnippet
+                );
+
+                pushNotification({
+                  category: 'system_update',
+                  title: 'Geri Bildirim Model İyileştirme Motoruna İşlendi',
+                  body: `${LUXO_MODELS[targetModelId]?.name || targetModelId} için rapor (${category}) Öz-Gelişim döngüsüne anlık olarak eklendi.`,
+                  targetView: 'evolution',
+                });
+              }}
+            />
+          )}
+
+          {isAuthModalOpen && (
+            <AuthModal
+              isOpen={isAuthModalOpen}
+              onClose={() => setIsAuthModalOpen(false)}
+              onGoogleSignIn={handleFirebaseGoogleSignIn}
+              onEmailSignIn={async (email, pass) => {
+                await loginWithEmailPassword(email, pass);
+              }}
+              onEmailRegister={registerWithEmailPassword}
+              onPasswordReset={requestPasswordReset}
+              onOpenUpgradeModal={() => setIsUpgradeModalOpen(true)}
+              isLimitReachedNotice={
+                user.isGuest && user.guestMessageCount >= GUEST_MESSAGE_LIMIT
+              }
+            />
+          )}
+
+          {isVoiceModalOpen && (
+            <VoiceModal
+              isOpen={isVoiceModalOpen}
+              onClose={() => setIsVoiceModalOpen(false)}
+              modelId={activeModelId}
+              selectedVoiceName={user.voiceName || 'Breeze'}
+              selectedVoiceRate={user.voiceRate || 1.0}
+              onChangeVoice={(voiceName, rate) =>
+                handleUpdateUser({
+                  voiceName,
+                  ...(typeof rate === 'number' ? { voiceRate: rate } : {}),
+                })
+              }
+              onUserSpoke={async (spoken) => {
+                handleSendMessage(spoken);
+                try {
+                  const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      messages: [{ role: 'user', content: spoken }],
+                      modelId: activeModelId,
+                      customInstructions: user.customInstructions,
+                      customTone: user.customTone,
+                      memoryItems,
+                      stream: false,
+                    }),
+                  });
+                  const data = await res.json();
+                  return cleanAssistantResponse(
+                    data.text ||
+                      `Luxo AI (${LUXO_MODELS[activeModelId].name}) yanıtınızı hazırladı.`
+                  );
+                } catch {
+                  return `Luxo AI (${LUXO_MODELS[activeModelId].name}) sizi dinliyor ve yanıtınızı sohbete ekledi.`;
+                }
+              }}
+            />
+          )}
+
+          {isCollabPanelOpen && (
+            <CollabWorkspacePanel
+              isOpen={isCollabPanelOpen}
+              onClose={() => setIsCollabPanelOpen(false)}
+              roomId={collab.roomId}
+              isConnected={collab.isConnected}
+              clientId={collab.clientId}
+              participants={collab.participants}
+              sharedDoc={collab.sharedDoc}
+              onChangeRoom={collab.changeRoom}
+              onUpdateSharedDoc={collab.updateSharedDoc}
+              onUpdateTyping={(isTyping) =>
+                collab.updatePresence({ activeSurface: 'doc', isTyping })
+              }
+              onSendDocToChat={(promptText) => {
+                setCurrentView('chat');
+                handleSendMessage(promptText);
+              }}
+            />
+          )}
+
+          {isCommandPaletteOpen && (
+            <CommandPaletteModal
+              isOpen={isCommandPaletteOpen}
+              onClose={() => setIsCommandPaletteOpen(false)}
+              user={user}
+              activeModelId={activeModelId}
+              isDarkTheme={Boolean(isDarkTheme)}
+              chats={chats}
+              libraryItems={libraryItems}
+              projects={projects}
+              studioArticles={studioArticles}
+              onSelectModel={(modelId) => {
+                setActiveModelId(modelId);
+                setCurrentView('chat');
+              }}
+              onSelectChat={(chatId) => {
+                setActiveChatId(chatId);
+                setCurrentView('chat');
+              }}
+              onOpenLibrary={() => setCurrentView('library')}
+              onOpenProjects={() => setCurrentView('projects')}
+              onNewChat={handleCreateNewChat}
+              onOpenImages={() => setCurrentView('images')}
+              onOpenDashboard={() => handleOpenDashboard('overview')}
+              onOpenModelMetrics={() => handleOpenDashboard('model-metrics')}
+              onOpenVoiceCommands={() => setIsVoiceCommandModalOpen(true)}
+              onOpenEvolution={() => setCurrentView('evolution')}
+              onOpenHub={(tab) => {
+                setHubInitialTab(tab);
+                setCurrentView('hub');
+              }}
+              onOpenContentStudio={() => {
+                setHubInitialTab('content-studio');
+                setCurrentView('hub');
+              }}
+              onOpenGithubSettings={() => {
+                setSettingsSubModal('github');
+                setCurrentView('settings');
+              }}
+              onOpenSocial={() => setCurrentView('social')}
+              onOpenCollab={() => setIsCollabPanelOpen(true)}
+              onToggleTheme={() =>
+                handleUpdateUser({ theme: isDarkTheme ? 'light' : 'dark' })
+              }
+              onEnableCompareMode={() => {
+                setCurrentView('chat');
+                setCompareTriggerCount((c) => c + 1);
+              }}
+              onOpenAuthModal={() => setIsAuthModalOpen(true)}
+              onOpenUpgradeModal={() => setIsUpgradeModalOpen(true)}
+            />
+          )}
+
+          {isNotificationsOpen && (
+            <NotificationCenterModal
+              isOpen={isNotificationsOpen}
+              onClose={() => setIsNotificationsOpen(false)}
+              notifications={notifications}
+              preferences={notificationPrefs}
+              onUpdatePreferences={(partial) =>
+                setNotificationPrefs((prev) =>
+                  normalizeNotificationPreferences({ ...prev, ...partial })
+                )
+              }
+              onMarkAsRead={(id) =>
+                setNotifications((prev) => markNotificationAsRead(prev, id))
+              }
+              onMarkAllAsRead={() =>
+                setNotifications((prev) => markAllNotificationsAsRead(prev))
+              }
+              onClearRead={() =>
+                setNotifications((prev) => clearReadNotifications(prev))
+              }
+              onNavigateView={(targetView) => setCurrentView(targetView)}
+            />
+          )}
+
+          {isVoiceCommandModalOpen && (
+            <VoiceCommandModal
+              isOpen={isVoiceCommandModalOpen}
+              onClose={() => setIsVoiceCommandModalOpen(false)}
+              onExecuteCommand={(action, rawText) => {
+                handleExecuteVoiceCommand(action, rawText);
+              }}
+            />
+          )}
+
+          {isGmailModalOpen && (
+            <GmailWorkspaceModal
+              isOpen={isGmailModalOpen}
+              onClose={() => setIsGmailModalOpen(false)}
+            />
+          )}
+
+          {isKeyboardShortcutsOpen && (
+            <KeyboardShortcutsModal
+              isOpen={isKeyboardShortcutsOpen}
+              onClose={() => setIsKeyboardShortcutsOpen(false)}
+            />
+          )}
+
+          {pendingVeoRequest && (
+            <CinematicMotionController
+              mode="modal"
+              value={cinematicMotion}
+              onChange={setCinematicMotion}
+              prompt={pendingVeoRequest.prompt}
+              onChangePrompt={(nextPrompt) =>
+                setPendingVeoRequest((prev) =>
+                  prev ? { ...prev, prompt: nextPrompt } : null
+                )
+              }
+              highFidelity={pendingVeoRequest.highFidelity}
+              onToggleHighFidelity={(nextHiFi) =>
+                setPendingVeoRequest((prev) =>
+                  prev ? { ...prev, highFidelity: nextHiFi } : null
+                )
+              }
+              isRendering={isStreaming}
+              onCancel={() => setPendingVeoRequest(null)}
+              onConfirmRender={() => {
+                const reqSnapshot = pendingVeoRequest;
+                const motionSnapshot = normalizeCinematicMotion(cinematicMotion);
+                setPendingVeoRequest(null);
+                if (reqSnapshot && reqSnapshot.prompt.trim()) {
+                  void handleSendMessage(reqSnapshot.prompt, undefined, {
+                    webSearch: reqSnapshot.webSearch,
+                    deepReasoning: reqSnapshot.deepReasoning,
+                    synthesisMode: reqSnapshot.synthesisMode,
+                    highFidelity: reqSnapshot.highFidelity,
+                    motionControl: motionSnapshot,
+                    skipMotionController: true,
+                    forceMediaMode: 'video',
+                    referenceImageDataUrl: reqSnapshot.referenceImageDataUrl,
+                  });
+                }
+              }}
+            />
+          )}
+        </React.Suspense>
       </div>
     </div>
     </MotionConfig>

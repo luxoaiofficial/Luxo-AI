@@ -75,6 +75,7 @@ import {
   toggleEvolutionRule,
 } from './src/utils/selfEvolutionEngine.ts';
 import type {
+  AiProviderId,
   ChatMessage,
   CinematicMotionParams,
   CitationItem,
@@ -84,12 +85,20 @@ import type {
   LuxoModelId,
   NanoBananaModelId,
   NanoLensPresetId,
+  ProviderConnectionStatusMap,
   SelfEvolutionState,
   SynthesisMode,
+  TokenUsageMetadata,
   VideoDurationOption,
   VideoResolutionSize,
   VisualAspectRatio,
 } from './src/types/luxo.ts';
+import {
+  clampMaxOutputTokens,
+  estimateTextTokens,
+  getModelTokenSpec,
+  isModelExecutableWithProviders,
+} from './src/utils/tokenLimitsEngine.ts';
 import {
   addArticleComment,
   addForumReply,
@@ -142,6 +151,39 @@ import {
   signSocialAdminToken,
   verifySocialAdminToken,
 } from './src/utils/securityHelpers.ts';
+import {
+  appendAdminAuditLog,
+  approveDiscoveredCandidate,
+  checkModelServerExecutionPolicy,
+  checkRateLimit,
+  deleteCustomModel,
+  deleteCustomProvider,
+  executeMultiProviderChat,
+  getAllPlatformProviders,
+  getExpandedProviderConnectionStatus,
+  getServerUnifiedCatalog,
+  getTodayZeroCostRequestCount,
+  incrementPlatformUsageStats,
+  ingestKnowledgeDocument,
+  persistPlatformState,
+  platformState,
+  queryKnowledgeBaseRag,
+  rejectDiscoveredCandidate,
+  requireVerifiedAdminRequest,
+  runLiveModelDiscovery,
+  setPlatformModelEnabled,
+  upsertCustomModel,
+  upsertCustomProvider,
+} from './src/server/luxoPlatformEngine.ts';
+import { listAllLogoEntries } from './src/utils/logoRegistry.ts';
+import {
+  isValidSecretEnvVarName,
+  validateCustomProviderUrl,
+} from './src/utils/ssrfGuard.ts';
+import type {
+  CatalogModelEntry,
+  ModelPricingTierStatus,
+} from './src/types/luxo.ts';
 
 dotenv.config();
 
@@ -650,6 +692,7 @@ function resolveThinkingLevelForCandidate(
 }
 
 const sdkModelCooldownMap = new Map<string, number>();
+const sdkModelLastErrorMap = new Map<string, { at: string; error: string }>();
 
 function isSdkModelHealthy(modelName: string): boolean {
   const until = sdkModelCooldownMap.get(modelName) || 0;
@@ -657,72 +700,279 @@ function isSdkModelHealthy(modelName: string): boolean {
 }
 
 function recordSdkModelFailure(modelName: string, err: unknown): void {
-  if (modelName === 'gemini-3.1-flash-lite') {
-    sdkModelCooldownMap.set(modelName, Date.now() + 15_000);
+  const msg =
+    err instanceof Error ? `${err.name}: ${err.message}` : String(err || 'unknown');
+  sdkModelLastErrorMap.set(modelName, {
+    at: new Date().toISOString(),
+    error: msg.slice(0, 300),
+  });
+  console.warn(`[Luxo SDK fallback] ${modelName}:`, msg.slice(0, 260));
+  if (msg.includes('404') || msg.includes('NOT_FOUND')) {
+    sdkModelCooldownMap.set(modelName, Date.now() + 600_000);
     return;
   }
-  const msg = String(err || '');
+  if (msg.includes('503') || msg.includes('UNAVAILABLE')) {
+    sdkModelCooldownMap.set(modelName, Date.now() + 5_000);
+    return;
+  }
+  if (modelName === 'gemini-3.1-flash-lite' || modelName === 'gemini-2.5-flash') {
+    sdkModelCooldownMap.set(modelName, Date.now() + 12_000);
+    return;
+  }
   const durationMs =
     msg.includes('Free Tier') || msg.includes('limit: 0') || msg.includes('429')
-      ? 90_000
-      : 30_000;
+      ? 60_000
+      : 20_000;
   sdkModelCooldownMap.set(modelName, Date.now() + durationMs);
 }
 
+function hasValidEnvKey(val?: string): boolean {
+  const trimmed = String(val || '').trim();
+  return Boolean(
+    trimmed &&
+      !trimmed.startsWith('MY_') &&
+      !trimmed.startsWith('YOUR_') &&
+      trimmed !== 'undefined' &&
+      trimmed !== 'null'
+  );
+}
+
+function getProviderConnectionStatus(): ProviderConnectionStatusMap {
+  return getExpandedProviderConnectionStatus();
+}
+
 function resolveCandidateModels(
-  modelId: LuxoModelId,
-  canTryPaid: boolean
+  modelId: string,
+  canTryPaid: boolean,
+  preferredUpstreamId?: string
 ): string[] {
-  const cfg = LUXO_MODELS[modelId];
-  const backend = cfg?.sdkBackend || 'gemini-4-hydrogen';
+  const knownSpec = modelId in LUXO_MODELS ? getModelTokenSpec(modelId as LuxoModelId) : null;
+  const preferred = preferredUpstreamId || knownSpec?.upstreamModelId || modelId;
+  const zeroCostActive = platformState.zeroCostPolicy.enabled || !canTryPaid;
   let rawOrder: string[];
 
-  if (backend === 'gemini-3.5-transcribe') {
-    rawOrder = [
-      'gemini-3.5-transcribe',
-      'gemini-4-hydrogen',
-      'gemini-3.1-flash-lite',
-    ];
-  } else if (
-    canTryPaid &&
-    (backend === 'gemini-4-carbon' ||
-      backend === 'gemini-4-neon' ||
-      backend === 'gemini-4-argon' ||
-      backend === 'gemini-4-hydrogen')
-  ) {
-    rawOrder = [
-      backend,
-      ...(backend !== 'gemini-4-hydrogen' ? ['gemini-4-hydrogen'] : []),
-      'gemini-3.1-flash-lite',
-    ];
-  } else if (
-    canTryPaid &&
-    (cfg?.category === 'DeepSeek' ||
-      cfg?.category === 'Anthropic Claude' ||
-      cfg?.category === 'OpenAI & ChatGPT' ||
-      cfg?.category === 'Luxo Özel' ||
-      cfg?.thinkingLevel === 'HIGH')
-  ) {
-    rawOrder = [
-      'gemini-4-neon',
-      'gemini-4-carbon',
-      'gemini-4-hydrogen',
-      'gemini-3.1-flash-lite',
-    ];
-  } else if (canTryPaid) {
-    rawOrder = [
-      'gemini-4-hydrogen',
-      'gemini-3.1-flash-lite',
-    ];
+  if (preferred === 'gemini-3.1-flash-lite' || modelId === 'luxo-flash') {
+    rawOrder = zeroCostActive
+      ? ['gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']
+      : ['gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-4-hydrogen', 'gemini-2.5-flash-lite'];
+  } else if (preferred === 'gemini-flash-latest' || preferred === 'gemini-2.5-flash') {
+    rawOrder = zeroCostActive
+      ? ['gemini-2.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite']
+      : ['gemini-2.5-flash', 'gemini-3.1-flash-lite', 'gemini-4-hydrogen', 'gemini-2.5-flash-lite'];
+  } else if (preferred === 'gemini-2.5-flash-lite') {
+    rawOrder = ['gemini-2.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
+  } else if (preferred.startsWith('gemma-')) {
+    rawOrder = [preferred, 'gemini-2.5-flash', 'gemini-3.1-flash-lite'];
   } else {
-    rawOrder = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
+    rawOrder = zeroCostActive
+      ? ['gemini-2.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite']
+      : ['gemini-4-hydrogen', 'gemini-2.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'];
   }
 
   const healthy = rawOrder.filter((m) => isSdkModelHealthy(m));
   if (healthy.length > 0) {
     return healthy;
   }
-  return ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
+  return zeroCostActive
+    ? ['gemini-2.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite']
+    : ['gemini-2.5-flash', 'gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
+}
+
+interface ThirdPartyChatExecutionResult {
+  text: string;
+  resolvedModel: string;
+  inputTokens: number;
+  outputTokens: number;
+  estimated: boolean;
+  provider: AiProviderId;
+}
+
+async function executeThirdPartyProviderChat(params: {
+  modelId: LuxoModelId;
+  systemInstruction: string;
+  messages: { role: string; content: string }[];
+  maxOutputTokens: number;
+  temperature?: number;
+  providers: ProviderConnectionStatusMap;
+}): Promise<ThirdPartyChatExecutionResult> {
+  const {
+    modelId,
+    systemInstruction,
+    messages,
+    maxOutputTokens,
+    temperature,
+    providers,
+  } = params;
+  const spec = getModelTokenSpec(modelId);
+  const promptTotalText =
+    systemInstruction + '\n' + messages.map((m) => m.content).join('\n');
+
+  const directProvider = spec.provider;
+  const useDirectAnthropic = directProvider === 'anthropic' && providers.anthropic;
+  const useOpenRouter =
+    !(directProvider !== 'global' && providers[directProvider as keyof ProviderConnectionStatusMap]) &&
+    providers.openrouter &&
+    Boolean(spec.openRouterModelId);
+
+  if (useDirectAnthropic) {
+    const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+    const anthropicMsgs = messages
+      .filter((m) => m.content.trim().length > 0)
+      .map((m) => ({
+        role: m.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+        content: m.content,
+      }));
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      signal: AbortSignal.timeout(25000),
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: spec.upstreamModelId,
+        max_tokens: maxOutputTokens,
+        system: systemInstruction,
+        ...(typeof temperature === 'number' ? { temperature } : {}),
+        messages:
+          anthropicMsgs.length > 0
+            ? anthropicMsgs
+            : [{ role: 'user', content: 'Merhaba' }],
+      }),
+    });
+    const payload = (await resp.json().catch(() => ({}))) as {
+      content?: { type?: string; text?: string }[];
+      usage?: { input_tokens?: number; output_tokens?: number };
+      error?: { message?: string };
+      model?: string;
+    };
+    if (!resp.ok) {
+      throw new Error(
+        payload?.error?.message || `Anthropic API HTTP ${resp.status}`
+      );
+    }
+    const text = (payload.content || [])
+      .filter((c) => c.type === 'text' && typeof c.text === 'string')
+      .map((c) => c.text)
+      .join('\n')
+      .trim();
+    const inputTokens =
+      Number(payload.usage?.input_tokens) || estimateTextTokens(promptTotalText);
+    const outputTokens =
+      Number(payload.usage?.output_tokens) || estimateTextTokens(text);
+    return {
+      text,
+      resolvedModel: payload.model || spec.upstreamModelId,
+      inputTokens,
+      outputTokens,
+      estimated: !payload.usage?.output_tokens,
+      provider: 'anthropic',
+    };
+  }
+
+  let endpoint = 'https://api.openai.com/v1/chat/completions';
+  let bearerKey = '';
+  let targetUpstreamModel = spec.upstreamModelId;
+  const extraHeaders: Record<string, string> = {};
+
+  if (useOpenRouter && spec.openRouterModelId) {
+    endpoint = 'https://openrouter.ai/api/v1/chat/completions';
+    bearerKey = String(process.env.OPENROUTER_API_KEY || '').trim();
+    targetUpstreamModel = spec.openRouterModelId;
+    extraHeaders['HTTP-Referer'] =
+      process.env.APP_URL || 'https://luxo.ai';
+    extraHeaders['X-Title'] = 'Luxo AI';
+  } else if (directProvider === 'openai' && providers.openai) {
+    endpoint = 'https://api.openai.com/v1/chat/completions';
+    bearerKey = String(process.env.OPENAI_API_KEY || '').trim();
+  } else if (directProvider === 'deepseek' && providers.deepseek) {
+    endpoint = 'https://api.deepseek.com/chat/completions';
+    bearerKey = String(process.env.DEEPSEEK_API_KEY || '').trim();
+  } else if (directProvider === 'xai' && providers.xai) {
+    endpoint = 'https://api.x.ai/v1/chat/completions';
+    bearerKey = String(
+      process.env.XAI_API_KEY || process.env.GROK_API_KEY || ''
+    ).trim();
+  } else if (directProvider === 'mistral' && providers.mistral) {
+    endpoint = 'https://api.mistral.ai/v1/chat/completions';
+    bearerKey = String(process.env.MISTRAL_API_KEY || '').trim();
+  } else if (directProvider === 'perplexity' && providers.perplexity) {
+    endpoint = 'https://api.perplexity.ai/chat/completions';
+    bearerKey = String(process.env.PERPLEXITY_API_KEY || '').trim();
+  } else if (directProvider === 'qwen' && providers.qwen) {
+    endpoint =
+      'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions';
+    bearerKey = String(
+      process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY || ''
+    ).trim();
+  } else {
+    throw new Error(`Sağlayıcı anahtarı eksik: ${directProvider}`);
+  }
+
+  const isReasoningOpenAi =
+    !useOpenRouter &&
+    directProvider === 'openai' &&
+    (/^(o1|o3|o4)/.test(targetUpstreamModel) ||
+      targetUpstreamModel.startsWith('gpt-5'));
+
+  const chatMessages = [
+    { role: 'system', content: systemInstruction },
+    ...messages.map((m) => ({
+      role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: m.content,
+    })),
+  ];
+
+  const reqBody: Record<string, unknown> = {
+    model: targetUpstreamModel,
+    messages: chatMessages,
+    ...(isReasoningOpenAi
+      ? { max_completion_tokens: maxOutputTokens }
+      : { max_tokens: maxOutputTokens }),
+    ...(!isReasoningOpenAi && typeof temperature === 'number'
+      ? { temperature }
+      : {}),
+  };
+
+  const resp = await fetch(endpoint, {
+    method: 'POST',
+    signal: AbortSignal.timeout(25000),
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${bearerKey}`,
+      ...extraHeaders,
+    },
+    body: JSON.stringify(reqBody),
+  });
+
+  const payload = (await resp.json().catch(() => ({}))) as {
+    choices?: { message?: { content?: string } }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
+    model?: string;
+    error?: { message?: string };
+  };
+
+  if (!resp.ok) {
+    throw new Error(
+      payload?.error?.message || `Provider API HTTP ${resp.status}`
+    );
+  }
+
+  const text = String(payload.choices?.[0]?.message?.content || '').trim();
+  const inputTokens =
+    Number(payload.usage?.prompt_tokens) || estimateTextTokens(promptTotalText);
+  const outputTokens =
+    Number(payload.usage?.completion_tokens) || estimateTextTokens(text);
+
+  return {
+    text,
+    resolvedModel: payload.model || targetUpstreamModel,
+    inputTokens,
+    outputTokens,
+    estimated: !payload.usage?.completion_tokens,
+    provider: directProvider,
+  };
 }
 
 interface ServerCollabRoom {
@@ -1066,12 +1316,39 @@ async function startServer() {
     res.status(200).json(buildWebAppManifest());
   });
 
+  app.get('/api/providers/status', (_req, res) => {
+    const providers = getExpandedProviderConnectionStatus();
+    const catalog = getServerUnifiedCatalog();
+    const unlockedModelIds = catalog
+      .filter((entry) => entry.executable)
+      .map((entry) => entry.id);
+    const activeProviderCount = Object.values(providers).filter(Boolean).length;
+    res.status(200).json({
+      ok: true,
+      providers,
+      activeProviderCount,
+      unlockedModelIds,
+      lockedModelCount: catalog.length - unlockedModelIds.length,
+      totalModelCount: catalog.length,
+      zeroCostModeEnabled: platformState.zeroCostPolicy.enabled,
+    });
+  });
+
   app.get('/api/health', (_req, res) => {
     const publicUrl = readPersistedTunnelUrl();
+    const providers = getExpandedProviderConnectionStatus();
+    const catalog = getServerUnifiedCatalog();
+    const liveApiReady = Boolean(getAiClient());
     res.status(200).json({
       ok: true,
       service: 'luxo-ai-studio',
-      modelCount: Object.keys(LUXO_MODELS).length,
+      modelCount: catalog.length,
+      executableModelCount: catalog.filter((m) => m.executable).length,
+      zeroCostModeEnabled: platformState.zeroCostPolicy.enabled,
+      liveApiReady,
+      providers,
+      engineMode: liveApiReady ? 'live-gemini-api' : 'local-synthesis',
+      sdkErrors: Object.fromEntries(sdkModelLastErrorMap.entries()),
       collabRooms: collabRooms.size,
       publicUrl: publicUrl || null,
       cacheHits: chatCacheHitCount,
@@ -1753,16 +2030,16 @@ async function startServer() {
   // 1200x630 OpenGraph Social Share Card SVG Endpoint
   app.get('/api/og-image', (req, res) => {
     const rawTitle = sanitizeLuxoBrand(
-      String(req.query.title || 'Luxo AI · 115 Yapay Zeka Modeli')
+      String(req.query.title || 'Luxo AI · 122 Yapay Zeka Modeli')
     ).slice(0, 62);
     const rawExcerpt = sanitizeLuxoBrand(
       String(
         req.query.excerpt ||
-          'Gemini 4 Hydrogen, Carbon & Neon, ChatGPT-5.2 Pro, Claude 4.6 Opus, DeepSeek V3.2, Nano Banana 4K ve Google Veo 3.'
+          'Gemini 4 Hydrogen, Carbon & Neon, ChatGPT-5.2 Pro, Claude 5.5 Opus, DeepSeek R2, Nano Banana 4K ve Google Veo 3.'
       )
     ).slice(0, 128);
     const rawBadge = sanitizeLuxoBrand(
-      String(req.query.badge || '115 YAPAY ZEKA · AUTO-ROUTER & VEO 3')
+      String(req.query.badge || '122 YAPAY ZEKA · AUTO-ROUTER & VEO 3')
     ).slice(0, 44);
 
     const words = rawExcerpt.split(/\s+/).filter(Boolean);
@@ -1818,7 +2095,7 @@ async function startServer() {
       }
 
       <g transform="translate(112, 476)">
-        <text x="0" y="24" fill="#38bdf8" font-family="JetBrains Mono, monospace" font-size="17" font-weight="600">115 Yapay Zeka Modeli · Luxo Auto-Router · Nano Banana 4K · Google Veo 3</text>
+        <text x="0" y="24" fill="#38bdf8" font-family="JetBrains Mono, monospace" font-size="17" font-weight="600">122 Yapay Zeka Modeli · Luxo Auto-Router · Nano Banana 4K · Google Veo 3</text>
       </g>
     </svg>`;
 
@@ -2322,8 +2599,9 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
     return res.json({ ok: true, state: nextState });
   });
 
-  // Supercharged Chat & Gemini 4 Argon Endpoint
+  // Supercharged Chat, Multi-Provider SSE Streaming & Knowledge RAG Endpoint
   app.post('/api/chat', async (req, res) => {
+    if (!checkRateLimit(req, res, 'chat', 60)) return;
     const {
       messages = [],
       modelId,
@@ -2344,15 +2622,25 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
       codeStrictness = 'production',
       autoVerifyOutputs = true,
       temperature,
+      maxOutputTokens: requestedMaxOutputTokens,
       inlineAttachment: topLevelAttachment,
+      knowledgeDocIds,
+      useKnowledgeBase = false,
       stream = true,
     } = req.body || {};
 
-    const requestedModel = String(modelId || legacyModelParam || 'luxo-flash');
-    const validModelId: LuxoModelId =
-      requestedModel in LUXO_MODELS
-        ? (requestedModel as LuxoModelId)
-        : 'luxo-flash';
+    const catalog = getServerUnifiedCatalog();
+    const requestedModel = String(modelId || legacyModelParam || 'gemini-3-1-flash-lite').trim();
+    const matchedCatalog = catalog.find((m) => m.id === requestedModel);
+    const validCatalogModelId = matchedCatalog
+      ? matchedCatalog.id
+      : requestedModel in LUXO_MODELS
+      ? requestedModel
+      : 'gemini-3-1-flash-lite';
+    const fallbackLegacyId: LuxoModelId =
+      validCatalogModelId in LUXO_MODELS
+        ? (validCatalogModelId as LuxoModelId)
+        : 'gemini-3-1-flash-lite';
 
     // Hydrate top-level inlineAttachment onto the latest user message if not already attached
     const normalizedMessages: {
@@ -2394,6 +2682,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
     const lastUserMessage = reversedUserMsg?.content || 'Merhaba';
     const activeAttachment = reversedUserMsg?.inlineAttachment;
 
+    const serverProviders = getExpandedProviderConnectionStatus();
     const reqStartMs = Date.now();
     const parsedReasoningForRoute: 'fast' | 'balanced' | 'deep' =
       reasoningLevel === 'fast' || reasoningLevel === 'deep'
@@ -2402,26 +2691,65 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
     const parsedStrictnessForRoute: 'production' | 'explained' =
       codeStrictness === 'explained' ? 'explained' : 'production';
     const autoRoute =
-      validModelId === 'luxo-auto-router'
+      validCatalogModelId === 'luxo-auto-router'
         ? resolveAutoRoutedModel(lastUserMessage, serverEvolutionState, {
             reasoningLevel: parsedReasoningForRoute,
             codeStrictness: parsedStrictnessForRoute,
             webSearch: Boolean(webSearch),
             hasAttachment: Boolean(activeAttachment),
+            availableProviders: serverProviders,
           })
         : null;
-    const effectiveModelId: LuxoModelId = autoRoute
+    const effectiveModelId: string = autoRoute
       ? autoRoute.targetModelId
-      : validModelId;
-    const modelCfg = LUXO_MODELS[effectiveModelId];
+      : validCatalogModelId;
+    const effectiveCatalogEntry =
+      catalog.find((m) => m.id === effectiveModelId) || matchedCatalog;
+    const legacyCfgForModel =
+      effectiveModelId in LUXO_MODELS
+        ? LUXO_MODELS[effectiveModelId as LuxoModelId]
+        : LUXO_MODELS['gemini-3-1-flash-lite'];
+    const effectiveModelName =
+      effectiveCatalogEntry?.name || legacyCfgForModel.name;
+    const effectiveProviderId = (effectiveCatalogEntry?.providerId ||
+      'google') as AiProviderId;
+    const effectiveMaxOutputTokens = Math.min(
+      effectiveCatalogEntry?.maxOutputTokens || 8192,
+      Math.max(
+        256,
+        typeof requestedMaxOutputTokens === 'number' &&
+          Number.isFinite(requestedMaxOutputTokens)
+          ? Math.round(requestedMaxOutputTokens)
+          : effectiveCatalogEntry?.maxOutputTokens ||
+              clampMaxOutputTokens(fallbackLegacyId, undefined)
+      )
+    );
+    const effectiveContextLimit =
+      effectiveCatalogEntry?.contextLength ||
+      getModelTokenSpec(fallbackLegacyId).maxInputTokens;
+
+    const serverPolicy = checkModelServerExecutionPolicy(effectiveModelId);
+    if (!serverPolicy.allowed) {
+      return res.status(serverPolicy.httpStatus).json({
+        ok: false,
+        errorCode: serverPolicy.errorCode || 'ZERO_COST_MODE_BLOCKED',
+        provider: effectiveProviderId,
+        modelId: effectiveModelId,
+        error: serverPolicy.message,
+      });
+    }
+
     const recordLatencyTelemetry = (success: boolean) => {
       const latencyMs = Math.max(120, Date.now() - reqStartMs);
-      persistServerEvolutionState(
-        recordModelUsageInState(serverEvolutionState, effectiveModelId, {
-          latencyMs,
-          success,
-        })
-      );
+      if (effectiveModelId in LUXO_MODELS) {
+        persistServerEvolutionState(
+          recordModelUsageInState(
+            serverEvolutionState,
+            effectiveModelId as LuxoModelId,
+            { latencyMs, success }
+          )
+        );
+      }
       return latencyMs;
     };
     const effectiveDeepReasoning =
@@ -2435,8 +2763,8 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
 
     const activeLearnedDirectives = getActiveDirectivesForModel(
       serverEvolutionState,
-      effectiveModelId,
-      modelCfg.category
+      fallbackLegacyId,
+      legacyCfgForModel.category
     );
     const exactMathProof = evaluateSafeMathExpression(lastUserMessage);
     const enrichedDirectives = exactMathProof
@@ -2462,7 +2790,36 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
         ? Math.max(0, Math.min(1, temperature))
         : undefined;
 
-    const systemInstruction = buildSystemPrompt(effectiveModelId, {
+    const ai = getAiClient();
+    const docIdFilter = Array.isArray(knowledgeDocIds)
+      ? knowledgeDocIds.map((d) => String(d)).filter(Boolean)
+      : undefined;
+    let ragCitations: CitationItem[] = [];
+    let combinedProjectContext = projectContext ? String(projectContext) : '';
+    if (
+      (docIdFilter && docIdFilter.length > 0) ||
+      (useKnowledgeBase && platformState.knowledgeChunks.length > 0)
+    ) {
+      const ragResult = await queryKnowledgeBaseRag({
+        queryText: lastUserMessage,
+        docIds: docIdFilter,
+        topK: 4,
+        ai,
+      });
+      if (ragResult.ragContextBlock) {
+        combinedProjectContext = [combinedProjectContext, ragResult.ragContextBlock]
+          .filter(Boolean)
+          .join('\n\n');
+        ragCitations = ragResult.results.map((r) => ({
+          title: `${r.docTitle} (#${r.chunkIndex + 1})`,
+          domain: 'knowledge-base',
+          url: `knowledge://${r.docId}`,
+          snippet: r.text.slice(0, 200),
+        }));
+      }
+    }
+
+    const systemInstruction = buildSystemPrompt(fallbackLegacyId, {
       customInstructions,
       customTone,
       customWarmth,
@@ -2470,7 +2827,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
       customFormatting,
       customEmoji,
       memoryItems,
-      projectContext,
+      projectContext: combinedProjectContext || undefined,
       webSearch: effectiveWebSearch,
       deepReasoning: effectiveDeepReasoning,
       synthesisMode: synthesisMode as SynthesisMode,
@@ -2483,10 +2840,26 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
     });
 
     const recentMessages = normalizedMessages.slice(-18);
+    const promptInputTokensEst = estimateTextTokens(
+      systemInstruction + '\n' + recentMessages.map((m) => m.content).join('\n')
+    );
+    const buildTokenUsagePayload = (
+      inputTokens: number,
+      outputTokens: number,
+      estimated = false
+    ): TokenUsageMetadata => ({
+      inputTokens,
+      outputTokens,
+      totalTokens: inputTokens + outputTokens,
+      maxOutputTokens: effectiveMaxOutputTokens,
+      contextLimitTokens: effectiveContextLimit,
+      provider: effectiveProviderId,
+      estimated,
+    });
 
     const fallbackData = generateLocalSmartResponse(
       lastUserMessage,
-      validModelId,
+      fallbackLegacyId,
       {
         webSearch: effectiveWebSearch,
         deepReasoning: effectiveDeepReasoning || parsedReasoningLevel === 'deep',
@@ -2503,11 +2876,184 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
           : undefined,
       }
     );
+    const mergedCitations =
+      ragCitations.length > 0
+        ? [...ragCitations, ...(fallbackData.citations || [])]
+        : fallbackData.citations;
 
-    const ai = getAiClient();
-    const canTryPaid = Boolean(ai && Date.now() > paidMediaCooldownUntil);
+    const isThirdPartyProvider =
+      effectiveProviderId !== 'google' &&
+      effectiveProviderId !== 'luxo' &&
+      effectiveProviderId !== 'media' &&
+      Boolean(effectiveCatalogEntry);
+
+    if (isThirdPartyProvider && effectiveCatalogEntry) {
+      if (!stream) {
+        try {
+          const tpResult = await executeMultiProviderChat({
+            catalogEntry: effectiveCatalogEntry,
+            systemInstruction,
+            messages: recentMessages,
+            maxOutputTokens: effectiveMaxOutputTokens,
+            temperature: parsedTemperature,
+            stream: false,
+          });
+          const cleaned = verifyAndRepairModelOutput(tpResult.text, {
+            allowLong: true,
+            exactMathProof,
+            autoVerify: parsedAutoVerify,
+          });
+          const tpLatencyMs = recordLatencyTelemetry(true);
+          incrementPlatformUsageStats({
+            providerId: tpResult.providerId,
+            inputTokens: tpResult.inputTokens,
+            outputTokens: tpResult.outputTokens,
+          });
+          const tokenUsage = buildTokenUsagePayload(
+            tpResult.inputTokens,
+            tpResult.outputTokens,
+            tpResult.estimated
+          );
+          return res.json({
+            text: cleaned,
+            thinkingSteps: fallbackData.thinkingSteps,
+            citations: mergedCitations,
+            followUpSuggestions: fallbackData.followUpSuggestions,
+            resolvedModel: tpResult.resolvedModel,
+            routedModelId: effectiveModelId,
+            engineMode: 'live-provider-api',
+            latencyMs: tpLatencyMs,
+            tokenUsage,
+          });
+        } catch (tpErr) {
+          recordLatencyTelemetry(false);
+          return res.status(502).json({
+            ok: false,
+            errorCode: 'PROVIDER_UPSTREAM_ERROR',
+            provider: effectiveProviderId,
+            modelId: effectiveModelId,
+            error: `${effectiveModelName} API yanıtı alınamadı: ${
+              tpErr instanceof Error ? tpErr.message : String(tpErr)
+            }`,
+          });
+        }
+      }
+
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      let tpClientDisconnected = false;
+      const tpAbortController = new AbortController();
+      res.on('close', () => {
+        if (!res.writableEnded) {
+          tpClientDisconnected = true;
+          tpAbortController.abort();
+        }
+      });
+      const safeTpWrite = (str: string) => {
+        if (tpClientDisconnected || res.writableEnded || res.destroyed) return;
+        try {
+          res.write(str);
+        } catch {
+          tpClientDisconnected = true;
+          tpAbortController.abort();
+        }
+      };
+
+      safeTpWrite(
+        `data: ${JSON.stringify({
+          meta: {
+            thinkingSteps: fallbackData.thinkingSteps,
+            citations: mergedCitations,
+            followUpSuggestions: fallbackData.followUpSuggestions,
+            routedModelId: effectiveModelId,
+            engineMode: 'live-provider-api',
+          },
+        })}\n\n`
+      );
+
+      try {
+        let streamedAccumulated = '';
+        const tpResult = await executeMultiProviderChat({
+          catalogEntry: effectiveCatalogEntry,
+          systemInstruction,
+          messages: recentMessages,
+          maxOutputTokens: effectiveMaxOutputTokens,
+          temperature: parsedTemperature,
+          abortSignal: tpAbortController.signal,
+          stream: true,
+          onDelta: (chunkText) => {
+            streamedAccumulated += chunkText;
+            safeTpWrite(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+          },
+        });
+        const cleaned = verifyAndRepairModelOutput(
+          tpResult.text || streamedAccumulated,
+          {
+            allowLong: true,
+            exactMathProof,
+            autoVerify: parsedAutoVerify,
+          }
+        );
+        if (!streamedAccumulated && cleaned) {
+          safeTpWrite(`data: ${JSON.stringify({ text: cleaned })}\n\n`);
+        }
+        const tpLatencyMs = recordLatencyTelemetry(true);
+        incrementPlatformUsageStats({
+          providerId: tpResult.providerId,
+          inputTokens: tpResult.inputTokens,
+          outputTokens: tpResult.outputTokens,
+        });
+        const tokenUsage = buildTokenUsagePayload(
+          tpResult.inputTokens,
+          tpResult.outputTokens,
+          tpResult.estimated
+        );
+        safeTpWrite(
+          `data: ${JSON.stringify({
+            meta: {
+              thinkingSteps: fallbackData.thinkingSteps,
+              citations: mergedCitations,
+              followUpSuggestions: fallbackData.followUpSuggestions,
+              resolvedModel: tpResult.resolvedModel,
+              routedModelId: effectiveModelId,
+              engineMode: 'live-provider-api',
+              latencyMs: tpLatencyMs,
+              tokenUsage,
+            },
+          })}\n\n`
+        );
+        safeTpWrite('data: [DONE]\n\n');
+        if (!res.writableEnded) res.end();
+        return;
+      } catch (tpErr) {
+        if (tpClientDisconnected) {
+          if (!res.writableEnded) res.end();
+          return;
+        }
+        recordLatencyTelemetry(false);
+        const errMsg = `${effectiveModelName} API yanıtı alınamadı: ${
+          tpErr instanceof Error ? tpErr.message : String(tpErr)
+        }`;
+        safeTpWrite(`data: ${JSON.stringify({ text: errMsg })}\n\n`);
+        safeTpWrite('data: [DONE]\n\n');
+        if (!res.writableEnded) res.end();
+        return;
+      }
+    }
+
+    const canTryPaid = Boolean(
+      ai &&
+        !platformState.zeroCostPolicy.enabled &&
+        Date.now() > paidMediaCooldownUntil
+    );
     const hasUrlInPrompt = /https?:\/\/\S+/i.test(lastUserMessage);
-    const candidateModels = resolveCandidateModels(effectiveModelId, canTryPaid);
+    const candidateModels = resolveCandidateModels(
+      effectiveModelId,
+      canTryPaid,
+      effectiveCatalogEntry?.upstreamModelId
+    );
 
     const isDeepReasoningActive =
       effectiveDeepReasoning || parsedReasoningLevel === 'deep';
@@ -2533,10 +3079,10 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
       String(projectContext || '').slice(0, 60),
       String(Array.isArray(memoryItems) ? memoryItems.length : 0),
     ].join('|');
-    const tuningSignature = `${parsedReasoningLevel}:${parsedConciseness}:${parsedCodeStrictness}:${parsedAutoVerify ? 1 : 0}:${parsedTemperature ?? 'def'}::${personalizationSig}`;
+    const tuningSignature = `${parsedReasoningLevel}:${parsedConciseness}:${parsedCodeStrictness}:${parsedAutoVerify ? 1 : 0}:${parsedTemperature ?? 'def'}:${effectiveMaxOutputTokens}::${personalizationSig}`;
     const cacheKey =
       !hasInlineAttachment && !effectiveWebSearch && normalizedMessages.length <= 2
-        ? `v7::${effectiveModelId}::${synthesisMode}::${effectiveDeepReasoning ? '1' : '0'}::${tuningSignature}::${serverEvolutionState.generation}::${lastUserMessage.trim().toLowerCase()}`
+        ? `v8::${effectiveModelId}::${synthesisMode}::${effectiveDeepReasoning ? '1' : '0'}::${tuningSignature}::${serverEvolutionState.generation}::${lastUserMessage.trim().toLowerCase()}`
         : '';
 
     const cachedHit = cacheKey ? chatResponseCache.get(cacheKey) : undefined;
@@ -2547,6 +3093,11 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
     ) {
       chatCacheHitCount += 1;
       const cacheLatencyMs = recordLatencyTelemetry(true);
+      const cachedTokenUsage = buildTokenUsagePayload(
+        promptInputTokensEst,
+        estimateTextTokens(cachedHit.text),
+        true
+      );
       if (!stream) {
         return res.json({
           text: cachedHit.text,
@@ -2556,6 +3107,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
           resolvedModel: 'lru-verified-cache',
           routedModelId: cachedHit.routedModelId,
           latencyMs: cacheLatencyMs,
+          tokenUsage: cachedTokenUsage,
         });
       }
       res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -2570,6 +3122,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
             resolvedModel: 'lru-verified-cache',
             routedModelId: cachedHit.routedModelId,
             latencyMs: cacheLatencyMs,
+            tokenUsage: cachedTokenUsage,
           },
         })}\n\n`
       );
@@ -2593,18 +3146,18 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
         thinkingSteps: steps,
         citations: cites,
         followUpSuggestions: fallbackData.followUpSuggestions,
-        routedModelId: effectiveModelId,
+        routedModelId: fallbackLegacyId,
         generation: serverEvolutionState.generation,
         createdAt: Date.now(),
       });
     };
 
     if (!stream) {
-      if (ai && canTryPaid && isInteractionsModel(effectiveModelId)) {
+      if (ai && canTryPaid && isInteractionsModel(fallbackLegacyId)) {
         try {
           const interRes = await runInteractionsTurn(
             ai,
-            effectiveModelId,
+            fallbackLegacyId,
             lastUserMessage,
             systemInstruction,
             effectiveWebSearch,
@@ -2625,7 +3178,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
                       ...interRes.proofSteps,
                     ]
                   : fallbackData.thinkingSteps,
-              citations: fallbackData.citations,
+              citations: mergedCitations,
               followUpSuggestions: fallbackData.followUpSuggestions,
               resolvedModel: interRes.resolvedModel,
               routedModelId: effectiveModelId,
@@ -2645,85 +3198,112 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
       }
 
       if (ai) {
+        const standardTools = buildStandardTools();
         for (const candidateModel of candidateModels) {
-          try {
-            const candidateThinking = resolveThinkingLevelForCandidate(
-              candidateModel,
-              effectiveDeepReasoning,
-              parsedReasoningLevel,
-              modelCfg.thinkingLevel
-            );
-            const perModelTimeout =
-              isDeepReasoningActive ? 26000 : 18000;
-            const allowTemp =
-              typeof parsedTemperature === 'number' &&
-              !candidateModel.startsWith('gemini-4-');
-            const response = await ai.models.generateContent({
-              model: candidateModel,
-              contents: buildGeminiContents(recentMessages),
-              config: {
-                abortSignal: AbortSignal.timeout(perModelTimeout),
-                systemInstruction,
-                tools: buildStandardTools(),
-                ...(allowTemp ? { temperature: parsedTemperature } : {}),
-                ...(supportsThinkingConfig(candidateModel)
-                  ? {
-                      thinkingConfig: {
-                        thinkingLevel: candidateThinking,
-                      },
-                    }
-                  : {}),
-              },
-            });
-            const grounded = extractGroundingCitations(response);
-            if (response.text) {
-              const cleaned = verifyAndRepairModelOutput(response.text, {
-                allowLong: allowLongOutput,
-                exactMathProof,
-                autoVerify: parsedAutoVerify,
+          const candidateThinking = resolveThinkingLevelForCandidate(
+            candidateModel,
+            effectiveDeepReasoning,
+            parsedReasoningLevel,
+            legacyCfgForModel.thinkingLevel
+          );
+          const perModelTimeout = isDeepReasoningActive ? 20000 : 13000;
+          const allowTemp =
+            typeof parsedTemperature === 'number' &&
+            !candidateModel.startsWith('gemini-4-');
+          const toolAttempts = standardTools ? [standardTools, undefined] : [undefined];
+          for (const attemptTools of toolAttempts) {
+            try {
+              const response = await ai.models.generateContent({
+                model: candidateModel,
+                contents: buildGeminiContents(recentMessages),
+                config: {
+                  abortSignal: AbortSignal.timeout(perModelTimeout),
+                  systemInstruction,
+                  maxOutputTokens: effectiveMaxOutputTokens,
+                  ...(attemptTools ? { tools: attemptTools } : {}),
+                  ...(allowTemp ? { temperature: parsedTemperature } : {}),
+                  ...(supportsThinkingConfig(candidateModel)
+                    ? {
+                        thinkingConfig: {
+                          thinkingLevel: candidateThinking,
+                        },
+                      }
+                    : {}),
+                },
               });
-              if (cleaned) {
-                rememberInChatCache(
-                  cleaned,
-                  fallbackData.thinkingSteps,
-                  grounded.length > 0 ? grounded : fallbackData.citations
-                );
-                const liveLatencyMs = recordLatencyTelemetry(true);
-                return res.json({
-                  text: cleaned,
-                  thinkingSteps: fallbackData.thinkingSteps,
-                  citations:
-                    grounded.length > 0 ? grounded : fallbackData.citations,
-                  followUpSuggestions: fallbackData.followUpSuggestions,
-                  resolvedModel: candidateModel,
-                  routedModelId: effectiveModelId,
-                  latencyMs: liveLatencyMs,
+              const grounded = extractGroundingCitations(response);
+              if (response.text) {
+                const cleaned = verifyAndRepairModelOutput(response.text, {
+                  allowLong: allowLongOutput,
+                  exactMathProof,
+                  autoVerify: parsedAutoVerify,
                 });
+                if (cleaned) {
+                  rememberInChatCache(
+                    cleaned,
+                    fallbackData.thinkingSteps,
+                    grounded.length > 0 ? grounded : mergedCitations
+                  );
+                  const liveLatencyMs = recordLatencyTelemetry(true);
+                  const um = (response as { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } }).usageMetadata;
+                  const inTok = Number(um?.promptTokenCount) || promptInputTokensEst;
+                  const outTok = Number(um?.candidatesTokenCount) || estimateTextTokens(cleaned);
+                  incrementPlatformUsageStats({
+                    providerId: 'google',
+                    inputTokens: inTok,
+                    outputTokens: outTok,
+                  });
+                  const tokenUsage = buildTokenUsagePayload(
+                    inTok,
+                    outTok,
+                    !um?.candidatesTokenCount
+                  );
+                  return res.json({
+                    text: cleaned,
+                    thinkingSteps: fallbackData.thinkingSteps,
+                    citations:
+                      grounded.length > 0 ? grounded : mergedCitations,
+                    followUpSuggestions: fallbackData.followUpSuggestions,
+                    resolvedModel: candidateModel,
+                    routedModelId: effectiveModelId,
+                    engineMode: 'live-gemini-api',
+                    latencyMs: liveLatencyMs,
+                    tokenUsage,
+                  });
+                }
               }
-            }
-          } catch (err) {
-            recordSdkModelFailure(candidateModel, err);
-            const msg = String(err || '');
-            if (
-              candidateModel.startsWith('gemini-4-') &&
-              (msg.includes('Free Tier') ||
-                msg.includes('limit: 0') ||
-                msg.includes('429'))
-            ) {
-              paidMediaCooldownUntil = Date.now() + 180000;
+            } catch (err) {
+              recordSdkModelFailure(candidateModel, err);
+              const msg = String(err || '');
+              if (
+                candidateModel.startsWith('gemini-4-') &&
+                (msg.includes('Free Tier') ||
+                  msg.includes('limit: 0') ||
+                  msg.includes('429'))
+              ) {
+                paidMediaCooldownUntil = Date.now() + 180000;
+              }
             }
           }
         }
       }
       const fallbackLatencyMs = recordLatencyTelemetry(false);
+      const fallbackText = verifyAndRepairModelOutput(fallbackData.text, {
+        allowLong: allowLongOutput,
+        exactMathProof,
+      });
       return res.json({
         ...fallbackData,
+        citations: mergedCitations,
         resolvedModel: `${effectiveModelId} (offline-fallback)`,
+        engineMode: 'local-synthesis',
         latencyMs: fallbackLatencyMs,
-        text: verifyAndRepairModelOutput(fallbackData.text, {
-          allowLong: allowLongOutput,
-          exactMathProof,
-        }),
+        tokenUsage: buildTokenUsagePayload(
+          promptInputTokensEst,
+          estimateTextTokens(fallbackText),
+          true
+        ),
+        text: fallbackText,
       });
     }
 
@@ -2732,9 +3312,11 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
     res.setHeader('Connection', 'keep-alive');
 
     let clientDisconnected = false;
+    const streamAbortController = new AbortController();
     res.on('close', () => {
       if (!res.writableEnded) {
         clientDisconnected = true;
+        streamAbortController.abort();
       }
     });
 
@@ -2744,6 +3326,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
         res.write(chunkStr);
       } catch {
         clientDisconnected = true;
+        streamAbortController.abort();
       }
     };
 
@@ -2760,7 +3343,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
       `data: ${JSON.stringify({
         meta: {
           thinkingSteps: fallbackData.thinkingSteps,
-          citations: fallbackData.citations,
+          citations: mergedCitations,
           followUpSuggestions: fallbackData.followUpSuggestions,
           routedModelId: effectiveModelId,
         },
@@ -2784,11 +3367,11 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
       }
     };
 
-    if (ai && canTryPaid && isInteractionsModel(effectiveModelId)) {
+    if (ai && canTryPaid && isInteractionsModel(fallbackLegacyId)) {
       try {
         const interRes = await runInteractionsTurn(
           ai,
-          effectiveModelId,
+          fallbackLegacyId,
           lastUserMessage,
           systemInstruction,
           effectiveWebSearch,
@@ -2806,7 +3389,7 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
                         ...interRes.proofSteps,
                       ]
                     : fallbackData.thinkingSteps,
-                citations: fallbackData.citations,
+                citations: mergedCitations,
                 followUpSuggestions: fallbackData.followUpSuggestions,
                 resolvedModel: interRes.resolvedModel,
                 routedModelId: effectiveModelId,
@@ -2831,135 +3414,179 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
     }
 
     if (ai && !clientDisconnected) {
+      const standardTools = buildStandardTools();
       for (const candidateModel of candidateModels) {
         if (clientDisconnected) break;
-        let sentAnyStreamChunk = false;
-        try {
-          const candidateThinking = resolveThinkingLevelForCandidate(
-            candidateModel,
-            effectiveDeepReasoning,
-            parsedReasoningLevel,
-            modelCfg.thinkingLevel
-          );
-          const perModelTimeout = isDeepReasoningActive ? 26000 : 18000;
-          const allowTemp =
-            typeof parsedTemperature === 'number' &&
-            !candidateModel.startsWith('gemini-4-');
-          const streamResp = await ai.models.generateContentStream({
-            model: candidateModel,
-            contents: buildGeminiContents(recentMessages),
-            config: {
-              abortSignal: AbortSignal.timeout(perModelTimeout),
-              systemInstruction,
-              tools: buildStandardTools(),
-              ...(allowTemp ? { temperature: parsedTemperature } : {}),
-              ...(supportsThinkingConfig(candidateModel)
-                ? {
-                    thinkingConfig: {
-                      thinkingLevel: candidateThinking,
-                    },
-                  }
-                : {}),
-            },
-          });
+        const candidateThinking = resolveThinkingLevelForCandidate(
+          candidateModel,
+          effectiveDeepReasoning,
+          parsedReasoningLevel,
+          legacyCfgForModel.thinkingLevel
+        );
+        const perModelTimeout = isDeepReasoningActive ? 20000 : 13000;
+        const allowTemp =
+          typeof parsedTemperature === 'number' &&
+          !candidateModel.startsWith('gemini-4-');
+        const toolAttempts = standardTools ? [standardTools, undefined] : [undefined];
 
-          let accumulated = '';
-          let groundedCitations: CitationItem[] = [];
-          for await (const chunk of streamResp) {
-            if (clientDisconnected) break;
-            const found = extractGroundingCitations(chunk);
-            if (found.length > 0) {
-              groundedCitations = found;
-            }
-            if (chunk.text) {
-              if (!sentAnyStreamChunk) {
-                sentAnyStreamChunk = true;
-                safeSseWrite(
-                  `data: ${JSON.stringify({
-                    meta: {
-                      thinkingSteps: fallbackData.thinkingSteps,
-                      citations:
-                        groundedCitations.length > 0
-                          ? groundedCitations
-                          : fallbackData.citations,
-                      followUpSuggestions: fallbackData.followUpSuggestions,
-                      resolvedModel: candidateModel,
-                      routedModelId: effectiveModelId,
-                    },
-                  })}\n\n`
-                );
+        for (const attemptTools of toolAttempts) {
+          if (clientDisconnected) break;
+          let sentAnyStreamChunk = false;
+          try {
+            const streamResp = await ai.models.generateContentStream({
+              model: candidateModel,
+              contents: buildGeminiContents(recentMessages),
+              config: {
+                abortSignal: AbortSignal.any([
+                  streamAbortController.signal,
+                  AbortSignal.timeout(perModelTimeout),
+                ]),
+                systemInstruction,
+                maxOutputTokens: effectiveMaxOutputTokens,
+                ...(attemptTools ? { tools: attemptTools } : {}),
+                ...(allowTemp ? { temperature: parsedTemperature } : {}),
+                ...(supportsThinkingConfig(candidateModel)
+                  ? {
+                      thinkingConfig: {
+                        thinkingLevel: candidateThinking,
+                      },
+                    }
+                  : {}),
+              },
+            });
+
+            let accumulated = '';
+            let groundedCitations: CitationItem[] = [];
+            let measuredInTokens = 0;
+            let measuredOutTokens = 0;
+            for await (const chunk of streamResp) {
+              if (clientDisconnected) break;
+              const chunkUm = (chunk as { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } }).usageMetadata;
+              if (chunkUm?.promptTokenCount) {
+                measuredInTokens = Number(chunkUm.promptTokenCount);
               }
-              accumulated += chunk.text;
-              safeSseWrite(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
+              if (chunkUm?.candidatesTokenCount) {
+                measuredOutTokens = Number(chunkUm.candidatesTokenCount);
+              }
+              const found = extractGroundingCitations(chunk);
+              if (found.length > 0) {
+                groundedCitations = found;
+              }
+              if (chunk.text) {
+                if (!sentAnyStreamChunk) {
+                  sentAnyStreamChunk = true;
+                  safeSseWrite(
+                    `data: ${JSON.stringify({
+                      meta: {
+                        thinkingSteps: fallbackData.thinkingSteps,
+                        citations:
+                          groundedCitations.length > 0
+                            ? [...ragCitations, ...groundedCitations]
+                            : mergedCitations,
+                        followUpSuggestions: fallbackData.followUpSuggestions,
+                        resolvedModel: candidateModel,
+                        routedModelId: effectiveModelId,
+                        engineMode: 'live-gemini-api',
+                      },
+                    })}\n\n`
+                  );
+                }
+                accumulated += chunk.text;
+                safeSseWrite(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
+              }
             }
-          }
-          const cleaned = verifyAndRepairModelOutput(accumulated, {
-            allowLong: allowLongOutput,
-            exactMathProof,
-            autoVerify: parsedAutoVerify,
-          });
-          if (cleaned) {
-            const liveLatencyMs = recordLatencyTelemetry(true);
-            if (cleaned.startsWith(accumulated) && cleaned.length > accumulated.length) {
-              const tailDelta = cleaned.slice(accumulated.length);
-              safeSseWrite(`data: ${JSON.stringify({ text: tailDelta })}\n\n`);
-            } else if (!sentAnyStreamChunk) {
-              streamCleanedChunks(cleaned);
+            const cleaned = verifyAndRepairModelOutput(accumulated, {
+              allowLong: allowLongOutput,
+              exactMathProof,
+              autoVerify: parsedAutoVerify,
+            });
+            if (cleaned) {
+              const liveLatencyMs = recordLatencyTelemetry(true);
+              const inTok = measuredInTokens || promptInputTokensEst;
+              const outTok = measuredOutTokens || estimateTextTokens(cleaned);
+              incrementPlatformUsageStats({
+                providerId: 'google',
+                inputTokens: inTok,
+                outputTokens: outTok,
+              });
+              const tokenUsage = buildTokenUsagePayload(
+                inTok,
+                outTok,
+                !measuredOutTokens
+              );
+              if (cleaned.startsWith(accumulated) && cleaned.length > accumulated.length) {
+                const tailDelta = cleaned.slice(accumulated.length);
+                safeSseWrite(`data: ${JSON.stringify({ text: tailDelta })}\n\n`);
+              } else if (!sentAnyStreamChunk) {
+                streamCleanedChunks(cleaned);
+              }
+              safeSseWrite(
+                `data: ${JSON.stringify({
+                  meta: {
+                    thinkingSteps: fallbackData.thinkingSteps,
+                    citations:
+                      groundedCitations.length > 0
+                        ? [...ragCitations, ...groundedCitations]
+                        : mergedCitations,
+                    followUpSuggestions: fallbackData.followUpSuggestions,
+                    resolvedModel: candidateModel,
+                    routedModelId: effectiveModelId,
+                    engineMode: 'live-gemini-api',
+                    latencyMs: liveLatencyMs,
+                    tokenUsage,
+                  },
+                })}\n\n`
+              );
+              rememberInChatCache(
+                cleaned,
+                fallbackData.thinkingSteps,
+                groundedCitations.length > 0
+                  ? [...ragCitations, ...groundedCitations]
+                  : mergedCitations
+              );
+              safeSseWrite('data: [DONE]\n\n');
+              return safeSseEnd();
             }
-            safeSseWrite(
-              `data: ${JSON.stringify({
-                meta: {
-                  thinkingSteps: fallbackData.thinkingSteps,
-                  citations:
-                    groundedCitations.length > 0
-                      ? groundedCitations
-                      : fallbackData.citations,
-                  followUpSuggestions: fallbackData.followUpSuggestions,
-                  resolvedModel: candidateModel,
-                  routedModelId: effectiveModelId,
-                  latencyMs: liveLatencyMs,
-                },
-              })}\n\n`
-            );
-            rememberInChatCache(
-              cleaned,
-              fallbackData.thinkingSteps,
-              groundedCitations.length > 0
-                ? groundedCitations
-                : fallbackData.citations
-            );
-            safeSseWrite('data: [DONE]\n\n');
-            return safeSseEnd();
-          }
-        } catch (err) {
-          recordSdkModelFailure(candidateModel, err);
-          const msg = String(err || '');
-          if (
-            candidateModel.startsWith('gemini-4-') &&
-            (msg.includes('Free Tier') ||
-              msg.includes('limit: 0') ||
-              msg.includes('429'))
-          ) {
-            paidMediaCooldownUntil = Date.now() + 180000;
-          }
-          if (sentAnyStreamChunk) {
-            safeSseWrite('data: [DONE]\n\n');
-            return safeSseEnd();
+          } catch (err) {
+            if (clientDisconnected) {
+              return safeSseEnd();
+            }
+            recordSdkModelFailure(candidateModel, err);
+            const msg = String(err || '');
+            if (
+              candidateModel.startsWith('gemini-4-') &&
+              (msg.includes('Free Tier') ||
+                msg.includes('limit: 0') ||
+                msg.includes('429'))
+            ) {
+              paidMediaCooldownUntil = Date.now() + 180000;
+            }
+            if (sentAnyStreamChunk) {
+              safeSseWrite('data: [DONE]\n\n');
+              return safeSseEnd();
+            }
           }
         }
       }
     }
 
     const fallbackLatencyMs = recordLatencyTelemetry(false);
+    const sseFallbackUsage = buildTokenUsagePayload(
+      promptInputTokensEst,
+      estimateTextTokens(fallbackData.text),
+      true
+    );
     safeSseWrite(
       `data: ${JSON.stringify({
         meta: {
           thinkingSteps: fallbackData.thinkingSteps,
-          citations: fallbackData.citations,
+          citations: mergedCitations,
           followUpSuggestions: fallbackData.followUpSuggestions,
           resolvedModel: `${effectiveModelId} (offline-fallback)`,
           routedModelId: effectiveModelId,
+          engineMode: 'local-synthesis',
           latencyMs: fallbackLatencyMs,
+          tokenUsage: sseFallbackUsage,
         },
       })}\n\n`
     );
@@ -3021,7 +3648,21 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
       : cleanPrompt;
 
     const ai = getAiClient();
-    if (ai && Date.now() > paidMediaCooldownUntil) {
+    const zeroCostActiveForImage = platformState.zeroCostPolicy.enabled;
+    if (
+      zeroCostActiveForImage &&
+      (resolvedModel === 'gemini-nano-banana-2.1' ||
+        resolvedModel === 'gemini-3-pro-image') &&
+      req.body?.allowZeroCostFallback !== true
+    ) {
+      return res.status(403).json({
+        ok: false,
+        errorCode: 'ZERO_COST_MODE_BLOCKED',
+        modelId: resolvedModel,
+        error: `${selectedModelCfg.name} requires paid image billing and is blocked while Zero Cost Mode is active.`,
+      });
+    }
+    if (ai && !zeroCostActiveForImage && Date.now() > paidMediaCooldownUntil) {
       const modelsToTry: NanoBananaModelId[] =
         resolvedModel === 'gemini-3.1-flash-lite-image'
           ? ['gemini-3.1-flash-lite-image']
@@ -3355,7 +3996,10 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
     const resolvedEndMime = endFrameMimeType || 'image/png';
 
     const ai = getAiClient();
-    const canTryPaidModels = Boolean(ai && Date.now() > paidMediaCooldownUntil);
+    const zeroCostActiveForVideo = platformState.zeroCostPolicy.enabled;
+    const canTryPaidModels = Boolean(
+      ai && !zeroCostActiveForVideo && Date.now() > paidMediaCooldownUntil
+    );
 
     // Optional Step 1: If user requested Nano Banana + Veo Hybrid Video without uploading an image, synthesize high-resolution starting keyframe first
     if (ai && canTryPaidModels && useNanoBananaFrame && !resolvedRefBase64) {
@@ -3416,8 +4060,8 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
     const targetFps = isInterpolated ? 60 : 24;
     const interpMode = isInterpolated ? 'optical-60fps' : 'standard-24fps';
 
-    // Tier 1: Native Google Omni 1.1 Flash Video API (Interactions API, supports 4K resolution & dual-keyframe interpolation)
-    if (ai && Date.now() > paidMediaCooldownUntil) {
+    // Tier 1: Native Google Omni 1.1 Flash Video API (Interactions API, skipped in Zero Cost Mode)
+    if (ai && !zeroCostActiveForVideo && Date.now() > paidMediaCooldownUntil) {
       try {
         const multiModalInput: (
           | { type: 'image'; mime_type: string; data: string }
@@ -4334,6 +4978,616 @@ Bu hedefi doğrudan sistem yönergesine eklenecek keskin, ölçülebilir 1 cüml
       state: serverSocialState,
     });
   });
+
+  // ======================== LUXO AI V2 PLATFORM ROUTES ========================
+
+  app.get('/api/catalog', (_req, res) => {
+    const models = getServerUnifiedCatalog();
+    const providers = getAllPlatformProviders();
+    res.json({
+      ok: true,
+      models,
+      providers,
+      zeroCostPolicy: platformState.zeroCostPolicy,
+      requestsToday: getTodayZeroCostRequestCount(),
+      logos: listAllLogoEntries(),
+      lastDiscoveryAt: platformState.lastDiscoveryAt,
+    });
+  });
+
+  // Model Arena: Compare 2-4 models concurrently with measured latency & Zero Cost enforcement
+  app.post('/api/arena', async (req, res) => {
+    if (!checkRateLimit(req, res, 'arena', 20)) return;
+    const { prompt, modelIds, systemContext, knowledgeDocIds } = req.body || {};
+    const cleanPrompt = sanitizeLuxoBrand(String(prompt || '').trim());
+    if (!cleanPrompt) {
+      return res.status(400).json({ ok: false, error: 'Prompt is required for Model Arena.' });
+    }
+    const requestedIds = Array.isArray(modelIds)
+      ? Array.from(new Set(modelIds.map((m) => String(m).trim()).filter(Boolean))).slice(0, 4)
+      : [];
+    if (requestedIds.length < 2) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Select 2 to 4 models to run a Model Arena comparison.',
+      });
+    }
+
+    const ai = getAiClient();
+    let ragContext = '';
+    if (Array.isArray(knowledgeDocIds) && knowledgeDocIds.length > 0) {
+      const rag = await queryKnowledgeBaseRag({
+        queryText: cleanPrompt,
+        docIds: knowledgeDocIds.map((d) => String(d)),
+        topK: 4,
+        ai,
+      });
+      ragContext = rag.ragContextBlock;
+    }
+
+    const sysInst = [
+      'You are Luxo AI competing in a transparent multi-model comparison Arena. Deliver an accurate, concise, well-structured answer.',
+      systemContext ? String(systemContext).slice(0, 2000) : '',
+      ragContext,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    const catalog = getServerUnifiedCatalog();
+
+    const runCard = async (id: string) => {
+      const startedAt = Date.now();
+      const entry = catalog.find((m) => m.id === id);
+      const policy = checkModelServerExecutionPolicy(id);
+      if (!policy.allowed || !entry) {
+        return {
+          modelId: id,
+          modelName: entry?.name || id,
+          providerId: entry?.providerId || 'unknown',
+          logoPath: entry?.logoPath || '/logos/luxo.svg',
+          content: '',
+          latencyMs: Date.now() - startedAt,
+          error: policy.message,
+          errorCode: policy.errorCode || 'BLOCKED',
+        };
+      }
+
+      try {
+        if (entry.providerId !== 'google') {
+          const out = await executeMultiProviderChat({
+            catalogEntry: entry,
+            systemInstruction: sysInst,
+            messages: [{ role: 'user', content: cleanPrompt }],
+            maxOutputTokens: Math.min(2048, entry.maxOutputTokens || 2048),
+            stream: false,
+          });
+          incrementPlatformUsageStats({
+            providerId: out.providerId,
+            inputTokens: out.inputTokens,
+            outputTokens: out.outputTokens,
+          });
+          return {
+            modelId: entry.id,
+            modelName: entry.name,
+            providerId: entry.providerId,
+            logoPath: entry.logoPath,
+            content: cleanAssistantResponse(out.text, true),
+            latencyMs: Math.max(40, Date.now() - startedAt),
+            inputTokens: out.inputTokens,
+            outputTokens: out.outputTokens,
+          };
+        }
+
+        if (!ai) {
+          throw new Error('GEMINI_API_KEY is not configured on the server.');
+        }
+
+        const candidateModels = resolveCandidateModels(
+          entry.id,
+          !platformState.zeroCostPolicy.enabled,
+          entry.upstreamModelId
+        );
+        let lastErr: unknown = null;
+        for (const cm of candidateModels) {
+          try {
+            const resp = await ai.models.generateContent({
+              model: cm,
+              contents: cleanPrompt,
+              config: {
+                abortSignal: AbortSignal.timeout(18000),
+                systemInstruction: sysInst,
+                maxOutputTokens: Math.min(2048, entry.maxOutputTokens || 2048),
+              },
+            });
+            if (resp.text) {
+              const um = (resp as { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number } }).usageMetadata;
+              const inTok = Number(um?.promptTokenCount) || estimateTextTokens(cleanPrompt);
+              const outTok = Number(um?.candidatesTokenCount) || estimateTextTokens(resp.text);
+              incrementPlatformUsageStats({
+                providerId: 'google',
+                inputTokens: inTok,
+                outputTokens: outTok,
+              });
+              return {
+                modelId: entry.id,
+                modelName: entry.name,
+                providerId: entry.providerId,
+                logoPath: entry.logoPath,
+                content: cleanAssistantResponse(resp.text, true),
+                latencyMs: Math.max(40, Date.now() - startedAt),
+                inputTokens: inTok,
+                outputTokens: outTok,
+              };
+            }
+          } catch (err) {
+            lastErr = err;
+          }
+        }
+        throw lastErr instanceof Error ? lastErr : new Error('Gemini execution failed.');
+      } catch (err) {
+        return {
+          modelId: entry.id,
+          modelName: entry.name,
+          providerId: entry.providerId,
+          logoPath: entry.logoPath,
+          content: '',
+          latencyMs: Math.max(40, Date.now() - startedAt),
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    };
+
+    const responses = await Promise.all(requestedIds.map((id) => runCard(id)));
+    return res.json({
+      ok: true,
+      id: `arena_${Date.now()}`,
+      prompt: cleanPrompt,
+      modelIds: requestedIds,
+      responses,
+      createdAt: Date.now(),
+    });
+  });
+
+  // Knowledge Base Ingestion, Semantic Vector + Lexical Search & Delete
+  app.get('/api/knowledge/docs', (_req, res) => {
+    res.json({
+      ok: true,
+      docs: platformState.knowledgeDocs,
+      chunkCount: platformState.knowledgeChunks.length,
+    });
+  });
+
+  app.post('/api/knowledge/upload', async (req, res) => {
+    if (!checkRateLimit(req, res, 'knowledge_upload', 20)) return;
+    const { title, fileName, mimeType, contentBase64, rawText, projectId } = req.body || {};
+    if (!fileName || (!contentBase64 && !rawText)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'fileName and either contentBase64 or rawText are required.',
+      });
+    }
+    try {
+      const doc = await ingestKnowledgeDocument({
+        title: String(title || fileName),
+        fileName: String(fileName),
+        mimeType: String(mimeType || 'text/plain'),
+        contentBase64: contentBase64 ? String(contentBase64) : undefined,
+        rawText: rawText ? String(rawText) : undefined,
+        projectId: projectId ? String(projectId) : undefined,
+        ai: getAiClient(),
+      });
+      return res.status(201).json({ ok: true, doc });
+    } catch (err) {
+      return res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Document ingestion failed.',
+      });
+    }
+  });
+
+  app.post('/api/knowledge/search', async (req, res) => {
+    const { queryText, docIds, topK = 5 } = req.body || {};
+    const q = String(queryText || '').trim();
+    if (!q) {
+      return res.status(400).json({ ok: false, error: 'queryText is required.' });
+    }
+    const result = await queryKnowledgeBaseRag({
+      queryText: q,
+      docIds: Array.isArray(docIds) ? docIds.map((d) => String(d)) : undefined,
+      topK: Math.min(10, Math.max(1, Number(topK) || 5)),
+      ai: getAiClient(),
+    });
+    return res.json({ ok: true, results: result.results });
+  });
+
+  app.delete('/api/knowledge/docs/:id', (req, res) => {
+    const docId = String(req.params.id || '').trim();
+    const before = platformState.knowledgeDocs.length;
+    platformState.knowledgeDocs = platformState.knowledgeDocs.filter((d) => d.id !== docId);
+    platformState.knowledgeChunks = platformState.knowledgeChunks.filter((c) => c.docId !== docId);
+    if (platformState.knowledgeDocs.length !== before) {
+      persistPlatformState();
+      return res.json({ ok: true });
+    }
+    return res.status(404).json({ ok: false, error: 'Document not found.' });
+  });
+
+  // Automatic AI Discovery Routes
+  app.get('/api/discovery/state', (_req, res) => {
+    res.json({
+      ok: true,
+      queue: platformState.discoveryQueue,
+      logs: platformState.discoveryLogs,
+      lastDiscoveryAt: platformState.lastDiscoveryAt,
+      autoDiscoveryIntervalHours: platformState.autoDiscoveryIntervalHours,
+    });
+  });
+
+  app.post('/api/discovery/refresh', async (req, res) => {
+    const admin = await requireVerifiedAdminRequest(req, res);
+    if (!admin) return;
+    if (!checkRateLimit(req, res, 'discovery_refresh', 10)) return;
+    const providerIds = Array.isArray(req.body?.providerIds)
+      ? req.body.providerIds.map((p: unknown) => String(p))
+      : undefined;
+    const result = await runLiveModelDiscovery({
+      providerIds,
+      actorUid: admin.uid,
+      actorEmail: admin.email,
+    });
+    return res.json({
+      ok: true,
+      ...result,
+      queue: platformState.discoveryQueue,
+      allLogs: platformState.discoveryLogs,
+      lastDiscoveryAt: platformState.lastDiscoveryAt,
+    });
+  });
+
+  app.post('/api/discovery/approve', async (req, res) => {
+    const admin = await requireVerifiedAdminRequest(req, res);
+    if (!admin) return;
+    const candidateId = String(req.body?.candidateId || '').trim();
+    if (!candidateId) {
+      return res.status(400).json({ ok: false, error: 'candidateId is required.' });
+    }
+    try {
+      const entry = approveDiscoveredCandidate(candidateId);
+      appendAdminAuditLog({
+        actorUid: admin.uid,
+        actorEmail: admin.email,
+        action: 'DISCOVERY_APPROVE',
+        target: entry.id,
+        detail: `Approved discovered model "${entry.name}" (${entry.pricingStatus})`,
+      });
+      return res.json({ ok: true, model: entry });
+    } catch (err) {
+      return res.status(404).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Candidate not found.',
+      });
+    }
+  });
+
+  app.post('/api/discovery/reject', async (req, res) => {
+    const admin = await requireVerifiedAdminRequest(req, res);
+    if (!admin) return;
+    const candidateId = String(req.body?.candidateId || '').trim();
+    if (!candidateId || !rejectDiscoveredCandidate(candidateId)) {
+      return res.status(404).json({ ok: false, error: 'Candidate not found.' });
+    }
+    appendAdminAuditLog({
+      actorUid: admin.uid,
+      actorEmail: admin.email,
+      action: 'DISCOVERY_REJECT',
+      target: candidateId,
+      detail: `Rejected discovery candidate ${candidateId}`,
+    });
+    return res.json({ ok: true });
+  });
+
+  // Server RS256-Verified Admin RBAC Routes
+  app.get('/api/admin/overview', async (req, res) => {
+    const admin = await requireVerifiedAdminRequest(req, res);
+    if (!admin) return;
+    const models = getServerUnifiedCatalog();
+    const providers = getAllPlatformProviders();
+    res.json({
+      ok: true,
+      admin: { uid: admin.uid, email: admin.email },
+      providers,
+      models,
+      zeroCostPolicy: platformState.zeroCostPolicy,
+      requestsToday: getTodayZeroCostRequestCount(),
+      usageStats: platformState.usageStats,
+      discoveryQueue: platformState.discoveryQueue,
+      discoveryLogs: platformState.discoveryLogs,
+      autoDiscoveryIntervalHours: platformState.autoDiscoveryIntervalHours,
+      lastDiscoveryAt: platformState.lastDiscoveryAt,
+      knowledgeDocsCount: platformState.knowledgeDocs.length,
+      logos: listAllLogoEntries(),
+      auditLogs: platformState.auditLogs,
+    });
+  });
+
+  app.get('/api/admin/audit-logs', async (req, res) => {
+    const admin = await requireVerifiedAdminRequest(req, res);
+    if (!admin) return;
+    res.json({ ok: true, auditLogs: platformState.auditLogs });
+  });
+
+  app.post('/api/admin/providers', async (req, res) => {
+    const admin = await requireVerifiedAdminRequest(req, res);
+    if (!admin) return;
+    const {
+      id,
+      name,
+      adapter = 'openai-compatible',
+      baseUrl,
+      secretEnvName,
+      modelsEndpoint,
+      logoKey,
+      accentColor,
+      enabled = true,
+      notes,
+    } = req.body || {};
+    if (!name || !baseUrl || !secretEnvName) {
+      return res.status(400).json({
+        ok: false,
+        error: 'name, baseUrl, and secretEnvName (env var name) are required.',
+      });
+    }
+    try {
+      const saved = upsertCustomProvider({
+        id: id ? String(id) : undefined,
+        name: String(name),
+        adapter:
+          adapter === 'anthropic-compatible'
+            ? 'anthropic-compatible'
+            : 'openai-compatible',
+        baseUrl: String(baseUrl),
+        secretEnvName: String(secretEnvName),
+        modelsEndpoint: modelsEndpoint ? String(modelsEndpoint) : undefined,
+        logoKey: logoKey ? String(logoKey) : undefined,
+        accentColor: accentColor ? String(accentColor) : undefined,
+        enabled: Boolean(enabled),
+        notes: notes ? String(notes) : undefined,
+      });
+      appendAdminAuditLog({
+        actorUid: admin.uid,
+        actorEmail: admin.email,
+        action: 'PROVIDER_UPSERT',
+        target: saved.id,
+        detail: `Configured provider "${saved.name}" (${saved.baseUrl}, env ${saved.secretEnvName})`,
+      });
+      return res.status(201).json({ ok: true, provider: saved });
+    } catch (err) {
+      return res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Invalid provider payload.',
+      });
+    }
+  });
+
+  app.delete('/api/admin/providers/:id', async (req, res) => {
+    const admin = await requireVerifiedAdminRequest(req, res);
+    if (!admin) return;
+    const id = String(req.params.id || '').trim();
+    if (!deleteCustomProvider(id)) {
+      return res.status(404).json({ ok: false, error: 'Custom provider not found.' });
+    }
+    appendAdminAuditLog({
+      actorUid: admin.uid,
+      actorEmail: admin.email,
+      action: 'PROVIDER_DELETE',
+      target: id,
+      detail: `Removed custom provider ${id}`,
+    });
+    return res.json({ ok: true });
+  });
+
+  app.post('/api/admin/providers/test-connection', async (req, res) => {
+    const admin = await requireVerifiedAdminRequest(req, res);
+    if (!admin) return;
+    const { providerId, baseUrl, secretEnvName } = req.body || {};
+    const providers = getAllPlatformProviders();
+    const matched = providers.find((p) => p.id === String(providerId || ''));
+    const targetUrl = String(baseUrl || matched?.modelsEndpoint || matched?.baseUrl || '').trim();
+    const envName = String(secretEnvName || matched?.secretEnvName || '').trim();
+
+    const ssrf = validateCustomProviderUrl(targetUrl);
+    if (!ssrf.valid || !ssrf.normalizedUrl) {
+      return res.status(400).json({ ok: false, error: ssrf.reason || 'Blocked URL.' });
+    }
+    if (!isValidSecretEnvVarName(envName)) {
+      return res.status(400).json({ ok: false, error: 'Invalid secret environment variable name.' });
+    }
+    const secretVal = String(process.env[envName] || '').trim();
+    if (!secretVal) {
+      return res.json({
+        ok: false,
+        connected: false,
+        error: `Environment variable ${envName} is not configured on the server.`,
+      });
+    }
+
+    const startedAt = Date.now();
+    try {
+      const testUrl =
+        matched?.id === 'google'
+          ? `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(secretVal)}`
+          : ssrf.normalizedUrl;
+      const headers: Record<string, string> = {};
+      if (matched?.id !== 'google') {
+        if (matched?.adapter === 'anthropic-compatible') {
+          headers['x-api-key'] = secretVal;
+          headers['anthropic-version'] = '2023-06-01';
+        } else {
+          headers['Authorization'] = `Bearer ${secretVal}`;
+        }
+      }
+      const resp = await fetch(testUrl, {
+        headers,
+        signal: AbortSignal.timeout(8000),
+      });
+      return res.json({
+        ok: resp.ok,
+        connected: resp.ok,
+        status: resp.status,
+        latencyMs: Date.now() - startedAt,
+      });
+    } catch (err) {
+      return res.json({
+        ok: false,
+        connected: false,
+        latencyMs: Date.now() - startedAt,
+        error: err instanceof Error ? err.message : 'Connection failed.',
+      });
+    }
+  });
+
+  app.post('/api/admin/models', async (req, res) => {
+    const admin = await requireVerifiedAdminRequest(req, res);
+    if (!admin) return;
+    const {
+      id,
+      name,
+      providerId,
+      upstreamModelId,
+      pricingStatus = 'FREE_TIER',
+      contextLength = 128000,
+      maxOutputTokens = 8192,
+      capabilities = ['Text', 'Streaming'],
+      description,
+      logoKey,
+      enabled = true,
+    } = req.body || {};
+    if (!name || !providerId || !upstreamModelId) {
+      return res.status(400).json({
+        ok: false,
+        error: 'name, providerId, and upstreamModelId are required.',
+      });
+    }
+    try {
+      const saved = upsertCustomModel({
+        id: id ? String(id) : undefined,
+        name: String(name),
+        providerId: String(providerId),
+        upstreamModelId: String(upstreamModelId),
+        pricingStatus: pricingStatus as ModelPricingTierStatus,
+        contextLength: Number(contextLength),
+        maxOutputTokens: Number(maxOutputTokens),
+        capabilities: Array.isArray(capabilities)
+          ? capabilities.map((c: unknown) => String(c))
+          : ['Text'],
+        description: description ? String(description) : undefined,
+        logoKey: logoKey ? String(logoKey) : undefined,
+        enabled: Boolean(enabled),
+      });
+      appendAdminAuditLog({
+        actorUid: admin.uid,
+        actorEmail: admin.email,
+        action: 'MODEL_UPSERT',
+        target: saved.id,
+        detail: `Added/updated model "${saved.name}" (${saved.pricingStatus})`,
+      });
+      return res.status(201).json({ ok: true, model: saved });
+    } catch (err) {
+      return res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Invalid model payload.',
+      });
+    }
+  });
+
+  app.patch('/api/admin/models/:id', async (req, res) => {
+    const admin = await requireVerifiedAdminRequest(req, res);
+    if (!admin) return;
+    const id = decodeURIComponent(String(req.params.id || '')).trim();
+    const enabled = Boolean(req.body?.enabled);
+    setPlatformModelEnabled(id, enabled);
+    appendAdminAuditLog({
+      actorUid: admin.uid,
+      actorEmail: admin.email,
+      action: enabled ? 'MODEL_ENABLE' : 'MODEL_DISABLE',
+      target: id,
+      detail: `${enabled ? 'Enabled' : 'Disabled'} model ${id}`,
+    });
+    return res.json({ ok: true, modelId: id, enabled });
+  });
+
+  app.delete('/api/admin/models/:id', async (req, res) => {
+    const admin = await requireVerifiedAdminRequest(req, res);
+    if (!admin) return;
+    const id = decodeURIComponent(String(req.params.id || '')).trim();
+    if (!deleteCustomModel(id)) {
+      return res.status(404).json({ ok: false, error: 'Custom model not found.' });
+    }
+    appendAdminAuditLog({
+      actorUid: admin.uid,
+      actorEmail: admin.email,
+      action: 'MODEL_DELETE',
+      target: id,
+      detail: `Removed custom model ${id}`,
+    });
+    return res.json({ ok: true });
+  });
+
+  app.patch('/api/admin/settings', async (req, res) => {
+    const admin = await requireVerifiedAdminRequest(req, res);
+    if (!admin) return;
+    const {
+      zeroCostEnabled,
+      allowFreeTier,
+      dailyZeroCostRequestCap,
+      autoDiscoveryIntervalHours,
+    } = req.body || {};
+
+    if (typeof zeroCostEnabled === 'boolean') {
+      platformState.zeroCostPolicy.enabled = zeroCostEnabled;
+    }
+    if (typeof allowFreeTier === 'boolean') {
+      platformState.zeroCostPolicy.allowFreeTierModels = allowFreeTier;
+    }
+    if (typeof dailyZeroCostRequestCap === 'number' && Number.isFinite(dailyZeroCostRequestCap)) {
+      platformState.zeroCostPolicy.dailyFreeRequestCap = Math.max(
+        10,
+        Math.min(50000, Math.round(dailyZeroCostRequestCap))
+      );
+    }
+    if (
+      typeof autoDiscoveryIntervalHours === 'number' &&
+      Number.isFinite(autoDiscoveryIntervalHours)
+    ) {
+      platformState.autoDiscoveryIntervalHours = Math.max(
+        0,
+        Math.min(168, Math.round(autoDiscoveryIntervalHours))
+      );
+    }
+    persistPlatformState();
+    appendAdminAuditLog({
+      actorUid: admin.uid,
+      actorEmail: admin.email,
+      action: 'SETTINGS_UPDATE',
+      target: 'platform_policy',
+      detail: `ZeroCost=${platformState.zeroCostPolicy.enabled}, FreeTier=${platformState.zeroCostPolicy.allowFreeTierModels}, Cap=${platformState.zeroCostPolicy.dailyFreeRequestCap}, AutoDisc=${platformState.autoDiscoveryIntervalHours}h`,
+    });
+    return res.json({
+      ok: true,
+      zeroCostPolicy: platformState.zeroCostPolicy,
+      autoDiscoveryIntervalHours: platformState.autoDiscoveryIntervalHours,
+    });
+  });
+
+  // Scheduled AI Model Discovery Polling (respects autoDiscoveryIntervalHours)
+  setInterval(() => {
+    const hrs = platformState.autoDiscoveryIntervalHours;
+    if (!hrs || hrs <= 0) return;
+    const elapsedMs = Date.now() - (platformState.lastDiscoveryAt || 0);
+    if (elapsedMs >= hrs * 3600 * 1000) {
+      runLiveModelDiscovery().catch(() => {});
+    }
+  }, 60 * 60 * 1000).unref();
 
   const distPath = path.resolve(process.cwd(), 'dist');
   const distIndexHtml = path.join(distPath, 'index.html');

@@ -69,3 +69,41 @@ test('Social admin HMAC capability token binds exclusively to claimed admin UID 
   assert.equal(verifySocialAdminToken(token + 'x', 'usr_owner_1', secret), false);
   assert.equal(verifySocialAdminToken('', 'usr_owner_1', secret), false);
 });
+
+test('normalizePromptIntent does not false-trigger code boilerplate on React speed questions and produces distinct model responses', async () => {
+  const { normalizePromptIntent, synthesizeAuthenticModelResponse } = await import('./aiPersonaEngine');
+  const prompt = 'React uygulamasında açılış hızını artırmak için en kritik 2 yöntemi kısaca yaz.';
+  const intent = normalizePromptIntent(prompt);
+  assert.equal(intent.wantsCode, false);
+  assert.equal(intent.domain, 'seo-perf-ux');
+
+  const modelIds = ['claude-5-5-opus', 'gemini-4-carbon', 'chatgpt-5-2-pro', 'deepseek-r2'] as const;
+  const outputs = modelIds.map((id) =>
+    synthesizeAuthenticModelResponse({
+      prompt,
+      modelId: id,
+      model: LUXO_MODELS[id],
+      routedModelId: id,
+      forceSearch: false,
+    }).text
+  );
+
+  for (const out of outputs) {
+    assert.ok(!out.includes('SlidingWindowLimiter') && !out.includes('TokenBucketLimiter'));
+    assert.ok(/React\.lazy|chunk|bundle|FCP|LCP|font|preload/i.test(out));
+  }
+  assert.equal(new Set(outputs).size, modelIds.length, 'Each model family must produce a distinct response');
+
+  const codeIntent = normalizePromptIntent('React ile hızlı filtreleme yapan bir lazy component kodu yaz.');
+  assert.equal(codeIntent.wantsCode, true);
+  assert.equal(codeIntent.domain, 'software-code');
+  const codeReply = synthesizeAuthenticModelResponse({
+    prompt: 'React ile hızlı filtreleme yapan bir lazy component kodu yaz.',
+    modelId: 'claude-5-5-opus',
+    model: LUXO_MODELS['claude-5-5-opus'],
+    routedModelId: 'claude-5-5-opus',
+    forceSearch: false,
+  });
+  assert.ok(codeReply.text.includes('FastWorkspaceShell') && codeReply.text.includes('React.lazy'));
+});
+

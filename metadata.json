@@ -1,6 +1,6 @@
 {
   "name": "Luxo AI",
-  "description": "112 Yapay Zeka Modeli: Gemini 4, ChatGPT-5.2 Pro, Claude 4.6 Opus, DeepSeek V3.2, Grok 4, Qwen 3, Nano Banana 4K ve Google Veo 3 Video Stüdyosu.",
+  "description": "122 Yapay Zeka Modeli: Gemini 4, ChatGPT-5.2 Pro, Claude 5.5 Opus, DeepSeek R2, Grok 4, Qwen 3, Nano Banana 4K ve Google Veo 3 Video Stüdyosu.",
   "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -574,15 +574,24 @@ export function normalizePromptIntent(
   const wantsUnitTests =
     /\b(unit\s*test|birim\s*test\w*|node:test|jest|vitest)\b/i.test(foldedText);
 
+  const isConceptualOrStrategyPrompt =
+    /\b(yontem\w*|strateji\w*|nasil\s+hizlandir\w*|acilis\s+hiz\w*|sayfa\s+hiz\w*|yukleme\s+hiz\w*|avantaj\w*|dezavantaj\w*|ipuc\w*|oneri\w*|en\s+iyi\s+pratik\w*|kisaca\s+yaz|ozet\s+yaz|maddelerle\s+yaz|neden\s+onemli|karsilastir\w*)\b/i.test(
+      foldedText
+    );
+
+  const hasExplicitCodeNoun =
+    /\b(kod|kodu|kodunu|fonksiyon|script|ornek kod|sinif|class|hook|bilesen|component|endpoint|sorgu|query|interface|regex|shader)\b/i.test(
+      foldedText
+    );
+
   const wantsCode =
     wantsUnitTests ||
-    /\b(kod|kodu|fonksiyon|script|ornek kod|sinif|class|hook|bilesen|component|endpoint|sorgu)\b/i.test(
-      foldedText
-    ) ||
-    (/\b(typescript|javascript|python|react|node|sql|html|css|rust|golang|algoritma|rate limit|hiz sinirlayici|akis kontrolcusu|siralama)\b/i.test(
-      foldedText
-    ) &&
-      /\b(yaz\w*|olustur\w*|goster\w*|ornek\w*|ver|tasarla\w*|kodla\w*|nasil yazilir)\b/i.test(
+    hasExplicitCodeNoun ||
+    (!isConceptualOrStrategyPrompt &&
+      /\b(typescript|javascript|python|react|node|sql|html|css|rust|golang|algoritma|rate limit|hiz sinirlayici|akis kontrolcusu|siralama)\b/i.test(
+        foldedText
+      ) &&
+      /\b(yaz\w*|olustur\w*|goster\w*|ornek\w*|tasarla\w*|kodla\w*|nasil yazilir)\b/i.test(
         foldedText
       ));
 
@@ -683,7 +692,7 @@ export function normalizePromptIntent(
   ) {
     domain = 'writing-translation';
   } else if (
-    /\b(seo|site haritasi|sitemap|meta etiket|core web vitals|lcp|cls|inp|brotli|onbellek|cache|redis|ui|ux|arayuz|performans|hedef kitle|icerik strateji\w*|icerik tur\w*|etkilesim|yorum bolum\w*|oylama sistem\w*|forum|guvenlik baslik\w*)\b/i.test(
+    /\b(seo|site haritasi|sitemap|meta etiket|core web vitals|lcp|cls|inp|fcp|ttfb|brotli|onbellek|cache|redis|ui|ux|arayuz|performans|acilis hiz\w*|yukleme hiz\w*|sayfa hiz\w*|bundle|chunk|code splitting|lazy|render blocking|mobil uyumluluk|responsive|hedef kitle|icerik strateji\w*|icerik tur\w*|etkilesim|yorum bolum\w*|oylama sistem\w*|forum|guvenlik baslik\w*)\b/i.test(
       combinedFolded
     )
   ) {
@@ -862,6 +871,46 @@ FROM aktif_oturumlar a
 JOIN kullanicilar k ON k.id = a.kullanici_id
 ORDER BY a.islem_sayisi DESC
 LIMIT 25;`,
+    };
+  }
+
+  if (/\breact\b/i.test(f) && /\b(hook|debounc|arama|search|bilesen|component|lazy|modal)\b/i.test(f)) {
+    return {
+      lang: 'tsx',
+      caption: `${modelName} ile hafif ve yeniden render dostu React hook/bileşen örneği:`,
+      code: `import React, { Suspense, useDeferredValue, useState } from 'react';
+
+const HeavySettingsModal = React.lazy(() => import('./SettingsModal'));
+
+export function FastWorkspaceShell({ items }: { items: string[] }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const deferredQuery = useDeferredValue(query);
+  const visible = items.filter((it) =>
+    it.toLowerCase().includes(deferredQuery.toLowerCase())
+  );
+
+  return (
+    <section className="space-y-3">
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Hızlı filtrele..."
+      />
+      <ul>
+        {visible.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+      <button type="button" onClick={() => setOpen(true)}>Ayarlar</button>
+      {open && (
+        <Suspense fallback={null}>
+          <HeavySettingsModal onClose={() => setOpen(false)} />
+        </Suspense>
+      )}
+    </section>
+  );
+}`,
     };
   }
 
@@ -1279,12 +1328,232 @@ export function synthesizeAuthenticModelResponse(params: {
   // 4. SEO, Web Performance, Security, Target Audience & User Engagement
   if (intent.domain === 'seo-perf-ux') {
     const f = intent.foldedText;
-    const asksAudienceOrContent = /\b(hedef kitle|persona|icerik tur\w*|baslik\w*|cekici)\b/i.test(
-      f
-    );
-    const asksEngagementFeatures = /\b(etkilesim|yorum|oylama|anket|forum|interaktif arac)\b/i.test(
-      f
-    );
+    const asksStartupOrBundleSpeed =
+      /\b(acilis\s+hiz\w*|yukleme\s+hiz\w*|sayfa\s+hiz\w*|bundle|chunk|code\s*splitting|lazy|render\s+blocking|fcp|lcp|ttfb|react\b.*\b(hiz|performans|optimi)|hizlandir\w*)\b/i.test(
+        f
+      );
+    const asksAudienceOrContent =
+      /\b(hedef kitle|persona|icerik tur\w*|baslik\w*|cekici)\b/i.test(f);
+    const asksEngagementFeatures =
+      /\b(etkilesim|yorum|oylama|anket|forum|interaktif arac)\b/i.test(f);
+
+    if (asksStartupOrBundleSpeed) {
+      const speedByArchetype: Record<
+        ModelArchetypeId,
+        {
+          lead: string;
+          points: { label: string; detail: string }[];
+          closing: string;
+        }
+      > = {
+        claude: {
+          lead: `**${intent.primarySubject}** için en büyük kazanım, ilk boyamadan (FCP) önce tarayıcıyı meşgul eden gereksiz JavaScript ayrıştırma ve render-bloke edici ağ isteklerini sistem sınırından ayırmaktır:`,
+          points: [
+            {
+              label: 'Rota ve Modal Bazlı Kod Bölme (React.lazy + Dinamik import)',
+              detail:
+                'Başlangıçta görünmeyen modalları, QR/PDF üreticileri ve ikincil stüdyo görünümlerini statik import yerine `React.lazy` + koşullu mount (`{isOpen && <Modal />}`) arkasına almak, ilk JS paketini ve ana iş parçacığı (main-thread) derleme yükünü %40-%65 azaltır; üstelik ilk etkileşimde küçük bir ağ gecikmesi dışında pratik bir ödünleşimi yoktur.',
+            },
+            {
+              label: 'Render-Bloke Edici CSS/Font ve Kritik Varlık Ön Yüklemesi',
+              detail:
+                'Harici yazı tiplerini senkron yüklemek yerine `media="print" onload="this.media=\'all\'"` kalıbıyla bloklamayı kaldırıp kritik marka logosunu `<link rel="preload" as="image">` ile önceliklendirmek, FCP ve LCP sıçramalarını önler.',
+            },
+          ],
+          closing:
+            'Özellikle uygulamanızda QR, grafik veya zengin editör gibi nadir açılan ağır kütüphaneler varsa bunları olay anında `await import(...)` ile yükleyerek açılış süresini anında aşağı çekebilirsiniz.',
+        },
+        gemini: {
+          lead: `**${intent.primarySubject}** hedefinde Core Web Vitals (FCP/LCP/INP) metriklerini en hızlı iyileştiren çekirdek mühendislik adımları:`,
+          points: [
+            {
+              label: '1. Kritik Yolu Küçültme (Code Splitting & Tree Shaking)',
+              detail:
+                'Yalnızca ilk ekranda gereken bileşenleri ana bundle içinde tutun; kapalı modalları, yönetim panellerini ve `qrcode`/PDF gibi yardımcı paketleri `React.lazy` ve dinamik `import()` ile ayrı Rollup chunklarına bölün.',
+            },
+            {
+              label: '2. Ağ & Boyama Önceliklendirmesi (Preload + Asenkron Font + Brotli)',
+              detail:
+                'Google Fonts bağlantısını render-bloke etmeyecek biçimde asenkron yükleyin, ilk ekrandaki SVG/görselleri `preload` edin ve statik varlıklarda Brotli + `Cache-Control: immutable` uygulayın.',
+            },
+          ],
+          closing:
+            'Önce `npm run build` çıktısındaki `index-*.js` boyutunu ölçüp 350 kB altına indirmeyi hedefleyin; ardından Lighthouse/Playwright ile FCP değişimini doğrulayın.',
+        },
+        'openai-chat': {
+          lead: `**${intent.primarySubject}** için doğrudan uygulayabileceğiniz en yüksek etkili iki yöntem:`,
+          points: [
+            {
+              label: 'Gereksiz Başlangıç Kodunu Bölün (React.lazy + Dynamic Import)',
+              detail:
+                'İlk ekranda açık olmayan tüm pencere, sekme ve ağır kütüphaneleri (`qrcode`, grafik, dışa aktarıcılar) statik importtan çıkarıp yalnızca kullanıcı tıkladığında yükleyin; tarayıcının indirdiği ve parse ettiği ilk JavaScript miktarı yarıya iner.',
+            },
+            {
+              label: 'Render-Bloke Edici Kaynakları Kaldırın ve Önbelleğe Alın',
+              detail:
+                'Harici font CSS dosyalarını bloklamasız yükleyin, üstteki kritik görsellerde `loading="eager"` / `<link rel="preload">` kullanın ve derlenmiş `assets/*` dosyalarını Brotli + uzun ömürlü cache ile sunun.',
+            },
+          ],
+          closing:
+            'Bu iki adımı uyguladıktan sonra build çıktısındaki ana chunk boyutunu karşılaştırarak net kazanımı görebilirsiniz.',
+        },
+        'openai-reasoning': {
+          lead: `**${intent.primarySubject}** problemi kritik render yolundaki (Critical Rendering Path) iki ana darboğaza indirgenir:`,
+          points: [
+            {
+              label: 'JS Parse & Hydration Maliyeti O(bundle_bytes)',
+              detail:
+                'Kullanıcı etkileşimine kadar gerekmeyen modal, grafik ve yardımcı modülleri `React.lazy` ve koşullu render ile başlangıç grafiğinden ayırarak ilk JS değerlendirme süresini minimuma indirin.',
+            },
+            {
+              label: 'Senkron Ağ Blokajını Kaldırma',
+              detail:
+                'Bloke edici harici CSS/font isteklerini asenkronlaştırın ve ilk anlamlı boyamadaki (FCP/LCP) kritik ikonları `preload` + Brotli sıkıştırma ile sunun.',
+            },
+          ],
+          closing:
+            'Öncelik sırası daima: (1) İlk JS baytını düşür, (2) Senkron stylesheet blokajını kır, (3) Statik varlıkları önbellekle.',
+        },
+        'deepseek-reasoning': {
+          lead: `**${intent.primarySubject}** analizinde gecikmeyi belirleyen iki fiziksel sınır vardır: ağ transfer baytı ve V8 ana iş parçacığı parse/compile süresi.`,
+          points: [
+            {
+              label: 'Giriş Chunk Bütçesi & Dinamik Sınırlandırma (O(critical_routes))',
+              detail:
+                'Ana giriş paketini (`index-*.js`) yalnızca ilk görünümle sınırlayın; ikincil rotaları `React.lazy` ve nadir kütüphaneleri olay anında `await import()` ile yükleyerek ilk parse süresini lineer ölçekte düşürün.',
+            },
+            {
+              label: 'Kritik Yol Paralelizmi (Zero Render-Blocking CSS + Preload)',
+              detail:
+                'Senkron harici font CSS bağlantısı `First Paint`i ağ RTT süresi kadar geciktirir; fontu asenkron yükleyip Brotli (`br`) ve 1 yıllık `immutable` HTTP önbellekleme ile tekrar ziyaret TTFB/transfer maliyetini sıfıra yaklaştırın.',
+            },
+          ],
+          closing:
+            'Kural nettir: ilk ekranda piksel üretmeyen hiçbir JS veya CSS kritik yolda senkron kalmamalıdır.',
+        },
+        grok: {
+          lead: `Mikro optimizasyonlarla vakit kaybetmeyin — açılış hızını gerçekte belirleyen iki şey var:`,
+          points: [
+            {
+              label: 'Açılışta Kullanılmayan Kodu Çöpten Ayırın (Lazy + Dynamic Import)',
+              detail:
+                'Kullanıcı daha "Ayarlar" veya "QR Paylaş" butonuna basmadan 400 kB modal ve kütüphane kodunu indirtmek gereksiz yüktür. Kapalı duran tüm modalları `React.lazy` + koşullu render ile ilk paketten atın.',
+            },
+            {
+              label: 'Tarayıcıyı Font/CSS İsteğiyle Kilitlemeyin',
+              detail:
+                'Harici Google Fonts linkini bloklayıcı olmaktan çıkarın, ana logo gibi kritik görselleri `preload` edin ve sunucudan Brotli ile sıkıştırılmış immutable varlıklar verin.',
+            },
+          ],
+          closing:
+            'İlk JS paketi yarıya inip font blokajı kalktığında site fark edilir biçimde anında açılır.',
+        },
+        llama: {
+          lead: `**${intent.primarySubject}** için açık web standartlarına dayalı en verimli iki optimizasyon:`,
+          points: [
+            {
+              label: 'Rota ve Bileşen Seviyesinde Kod Bölme',
+              detail:
+                '`React.lazy` + `Suspense` ile ikincil ekranları ayırıp ağır bağımlılıkları dinamik `import()` üzerinden yükleyin.',
+            },
+            {
+              label: 'Standart HTTP Önbellekleme ve Asenkron Font Yükleme',
+              detail:
+                'Render-bloke edici CSS yerine asenkron yükleme ve hashlenmiş varlıklarda `Cache-Control: public, max-age=31536000, immutable` kullanın.',
+            },
+          ],
+          closing:
+            'Yalın bir bundle yapısı uzun vadede hem açılış hızını hem de bakım kolaylığını korur.',
+        },
+        mistral: {
+          lead: `**${intent.primarySubject}** için iki yüksek etkili teknik:`,
+          points: [
+            {
+              label: 'Agresif Kod Bölme (`React.lazy` + `import()`)',
+              detail:
+                'İlk ekranda görünmeyen modalları ve ağır yardımcıları başlangıç chunkından çıkarın.',
+            },
+            {
+              label: 'Render-Blokajını Kaldırma + HTTP/Brotli Önbellek',
+              detail:
+                'Senkron harici font CSS yerine asenkron yükleme, kritik görsellerde `preload` ve immutable asset önbelleği uygulayın.',
+            },
+          ],
+          closing: 'Hedef: < 350 kB başlangıç JS ve sıfır senkron dış CSS blokajı.',
+        },
+        qwen: {
+          lead: `**${intent.primarySubject}** kapsamında tam yığın hızlandırma planı:`,
+          points: [
+            {
+              label: 'İstemci Katmanı: Paket Bölme ve Tembel Yükleme',
+              detail:
+                'Kapalı modalları ve ağır bağımlılıkları `React.lazy` / dinamik `import()` ile ayırarak ilk JS indirme boyutunu küçültün.',
+            },
+            {
+              label: 'Ağ & Sunucu Katmanı: Bloke Etmeyen Font ve Brotli Cache',
+              detail:
+                'Google Fonts CSS yüklemesini asenkron yapın, kritik logoları `preload` edin ve statik dosyalarda Brotli sıkıştırma kullanın.',
+            },
+          ],
+          closing:
+            'Ön yüz bölme + sunucu sıkıştırma birleştiğinde hem ilk açılış hem tekrar girişler hızlanır.',
+        },
+        perplexity: {
+          lead: `Web performans standartlarına (web.dev Core Web Vitals) göre **${intent.primarySubject}** için en kritik iki kaldıraç:`,
+          points: [
+            {
+              label: 'Giriş Paketini Küçültme (Code Splitting / INP & FCP)',
+              detail:
+                'Başlangıçta gerekmeyen UI modallerini ve büyük kütüphaneleri `React.lazy` / dinamik `import()` ile ayırmak Total Blocking Time (TBT) ve FCP metriklerini doğrudan düşürür.',
+            },
+            {
+              label: 'Render-Blocking Kaynakların Giderilmesi (LCP)',
+              detail:
+                'Harici stylesheetlerin senkron yüklemesini kaldırmak, kritik LCP görsellerine `<link rel="preload">` eklemek ve Brotli sıkıştırma sunmak ilk boyamayı hızlandırır.',
+            },
+          ],
+          closing:
+            'Doğrulama için build chunk boyutunu ve tarayıcı Network/LCP zaman çizelgesini ölçmek yeterlidir.',
+        },
+        luxo: {
+          lead: `**${intent.primarySubject}** için en doğrudan etkiyi veren iki yöntem:`,
+          points: [
+            {
+              label: 'Kod Bölme (`React.lazy` + Dinamik `import()`)',
+              detail:
+                'İlk açılışta görünmeyen modalları ve ağır yardımcıları başlangıç paketinden çıkararak JS indirme/derleme süresini düşürün.',
+            },
+            {
+              label: 'Asenkron Font & Brotli/Immutable Önbellekleme',
+              detail:
+                'Bloke edici harici CSS isteklerini asenkron yükleyin ve kritik varlıkları preload + uzun ömürlü önbellekle sunun.',
+            },
+          ],
+          closing:
+            'Bu iki iyileştirme doğrudan FCP, LCP ve etkileşime hazır olma süresini kısaltır.',
+        },
+      };
+
+      const chosen = speedByArchetype[persona.archetype] || speedByArchetype.luxo;
+      const text = persona.formatStructuredReply({
+        modelName: model.name,
+        lead: chosen.lead,
+        points: chosen.points,
+        closing: chosen.closing,
+      });
+
+      return {
+        text,
+        thinkingSteps,
+        citations,
+        routedModelId,
+        followUpSuggestions: [
+          'Bu projedeki en büyük JS paketini nasıl küçültürüz?',
+          'React.lazy + Suspense için örnek kod yaz',
+          'Core Web Vitals (LCP, INP, CLS) kontrol listesi ver',
+        ],
+      };
+    }
 
     const points = asksAudienceOrContent
       ? [

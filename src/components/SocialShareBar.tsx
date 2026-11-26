@@ -10,7 +10,6 @@ import {
   Share2,
   X,
 } from 'lucide-react';
-import QRCode from 'qrcode';
 import { SharedContentPayload } from '../types/luxo';
 import {
   buildOpenGraphMeta,
@@ -159,18 +158,29 @@ export const SocialShareButton: React.FC<SocialShareButtonProps> = ({
       : links.shareUrl;
 
   useEffect(() => {
+    let active = true;
     if (showQrModal && targetShareUrl) {
-      QRCode.toDataURL(targetShareUrl, {
-        width: 320,
-        margin: 2,
-        color: {
-          dark: '#0f172a',
-          light: '#ffffff',
-        },
-      })
-        .then((url) => setQrDataUrl(url))
-        .catch(() => setQrDataUrl(''));
+      import('qrcode')
+        .then((mod) =>
+          mod.default.toDataURL(targetShareUrl, {
+            width: 320,
+            margin: 2,
+            color: {
+              dark: '#0f172a',
+              light: '#ffffff',
+            },
+          })
+        )
+        .then((url) => {
+          if (active) setQrDataUrl(url);
+        })
+        .catch(() => {
+          if (active) setQrDataUrl('');
+        });
     }
+    return () => {
+      active = false;
+    };
   }, [showQrModal, targetShareUrl]);
 
   const handleCopyLink = () => {

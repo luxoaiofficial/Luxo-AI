@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import QRCode from 'qrcode';
 import {
   ArrowLeft,
   Bell,
@@ -53,12 +52,13 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { LuxoModelCategory, LuxoModelId, LuxoPlugin, LuxoUser } from '../types/luxo';
 import {
-  generateDefaultAnalyticsReport,
-  getDefaultCmsConfig,
-  getDefaultSpeedOptimization,
-} from '../utils/analyticsEngine';
+  LuxoModelCategory,
+  LuxoModelId,
+  LuxoPlugin,
+  LuxoUser,
+  ProviderConnectionStatusMap,
+} from '../types/luxo';
 import {
   EXTENDED_CATALOG_MODEL_IDS,
   LUXO_MODELS,
@@ -68,6 +68,11 @@ import {
   PUBLIC_CHAT_MODEL_IDS,
   sanitizeLuxoBrand,
 } from '../utils/luxoLogic';
+import {
+  DEFAULT_PROVIDER_STATUS,
+  DEFAULT_WORKING_MODEL_ID,
+  isModelExecutableWithProviders,
+} from '../utils/tokenLimitsEngine';
 import {
   buildGithubPushCommands,
   GITHUB_REPO_STORAGE_KEY,
@@ -104,6 +109,7 @@ interface SettingsViewProps {
   onSelectModelFromSettings?: (modelId: LuxoModelId) => void;
   showExtendedModelsInChat?: boolean;
   onToggleExtendedModelsInChat?: (show: boolean) => void;
+  providerStatus?: ProviderConnectionStatusMap;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -134,6 +140,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onSelectModelFromSettings,
   showExtendedModelsInChat = false,
   onToggleExtendedModelsInChat,
+  providerStatus = DEFAULT_PROVIDER_STATUS,
 }) => {
   const [searchFilter, setSearchFilter] = useState('');
   const [subView, setSubView] = useState<string | null>(initialSubModal);
@@ -180,7 +187,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   // AI Tuning state
   const [defaultModelId, setDefaultModelId] = useState<LuxoUser['defaultModelId']>(
-    user.defaultModelId || 'gemini-4-carbon'
+    user.defaultModelId || DEFAULT_WORKING_MODEL_ID
   );
   const [reasoningLevel, setReasoningLevel] = useState<'fast' | 'balanced' | 'deep'>(
     user.reasoningLevel || 'balanced'
@@ -294,15 +301,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   useEffect(() => {
+    let active = true;
     if (showDirectQrModal) {
-      QRCode.toDataURL(STANDALONE_DIRECT_URL, {
-        width: 320,
-        margin: 2,
-        color: { dark: '#0f172a', light: '#ffffff' },
-      })
-        .then((url) => setDirectQrDataUrl(url))
-        .catch(() => setDirectQrDataUrl(''));
+      import('qrcode')
+        .then((mod) =>
+          mod.default.toDataURL(STANDALONE_DIRECT_URL, {
+            width: 320,
+            margin: 2,
+            color: { dark: '#0f172a', light: '#ffffff' },
+          })
+        )
+        .then((url) => {
+          if (active) setDirectQrDataUrl(url);
+        })
+        .catch(() => {
+          if (active) setDirectQrDataUrl('');
+        });
     }
+    return () => {
+      active = false;
+    };
   }, [showDirectQrModal]);
 
   const handleCopyDirectLink = () => {
@@ -1201,6 +1219,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   if (subView === 'ai_tuning') {
     return (
       <div className="flex flex-col h-full bg-[#f8f8f8] dark:bg-[#000000] text-neutral-900 dark:text-neutral-100 select-none relative overflow-hidden">
+        {toast && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-neutral-900 text-white text-xs font-semibold rounded-full shadow-lg">
+            {toast}
+          </div>
+        )}
         <header className="flex items-center justify-between px-4 py-3 bg-white dark:bg-[#000000] border-b border-neutral-200/60 dark:border-neutral-900 shrink-0">
           <button
             type="button"
@@ -1211,7 +1234,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <ArrowLeft className="w-5 h-5" />
           </button>
           <h2 className="text-base font-bold tracking-tight">
-            Yapay Zeka & Model Ayarları
+            Yapay Zeka &amp; Model Ayarları
           </h2>
           <button
             type="button"
@@ -1231,32 +1254,49 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 Varsayılan Model Tercihi
               </span>
               <span className="text-xs text-neutral-500">
-                Yeni sohbet başlattığınızda otomatik atanacak model
+                Yeni sohbet başlattığınızda otomatik seçilecek motor
               </span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
               {PUBLIC_CHAT_MODEL_IDS.map((mId) => {
                 const m = LUXO_MODELS[mId];
                 if (!m) return null;
+                const avail = isModelExecutableWithProviders(
+                  mId,
+                  providerStatus,
+                  user,
+                  m.allowGuest !== false
+                );
                 return (
                   <button
                     key={m.id}
                     type="button"
                     data-testid={`settings-default-model-${m.id}`}
-                    onClick={() => setDefaultModelId(m.id)}
-                    className={`p-3 rounded-2xl text-left border transition cursor-pointer font-medium flex items-center gap-2.5 ${
+                    onClick={() => {
+                      if (!avail.unlocked) {
+                        showToast(`${m.name} kilitli: ${avail.reasonLabelTr}`);
+                        return;
+                      }
+                      setDefaultModelId(m.id);
+                    }}
+                    className={`p-3 rounded-2xl text-left border transition cursor-pointer font-medium flex items-center justify-between gap-2 ${
                       defaultModelId === m.id
                         ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-bold'
-                        : 'border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-[#1f2024] text-neutral-700 dark:text-neutral-300'
+                        : avail.unlocked
+                        ? 'border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-[#1f2024] text-neutral-700 dark:text-neutral-300'
+                        : 'border-neutral-200 dark:border-neutral-800 bg-neutral-50/70 dark:bg-[#16171a] text-neutral-400 dark:text-neutral-500 opacity-75'
                     }`}
                   >
-                    <ModelBrandAvatar
-                      name={m.name}
-                      logoUrl={m.logoUrl}
-                      accentColor={m.accentColor}
-                      sizeClass="w-6 h-6 rounded-md"
-                    />
-                    <span className="truncate">{m.name}</span>
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <ModelBrandAvatar
+                        name={m.name}
+                        logoUrl={m.logoUrl}
+                        accentColor={m.accentColor}
+                        sizeClass="w-6 h-6 rounded-md"
+                      />
+                      <span className="truncate">{m.name}</span>
+                    </div>
+                    {!avail.unlocked && <Lock className="w-3.5 h-3.5 shrink-0" />}
                   </button>
                 );
               })}
@@ -1266,7 +1306,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               onClick={() => setSubView('all_models')}
               className="w-full py-2.5 px-3.5 rounded-2xl border border-dashed border-neutral-300 dark:border-neutral-700 text-xs font-semibold text-neutral-600 dark:text-neutral-300 hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 transition flex items-center justify-between cursor-pointer"
             >
-              <span>Diğer {EXTENDED_CATALOG_MODEL_IDS.length} modeli gör (Şifreli Katalog)</span>
+              <span>
+                Diğer {EXTENDED_CATALOG_MODEL_IDS.length} modeli gör (Şifreli Katalog)
+              </span>
               <Lock className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -1632,7 +1674,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               Diğer Modeller (Şifreli Katalog)
             </h2>
             <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
-              {EXTENDED_CATALOG_MODEL_IDS.length} ek yapay zeka modeli
+              {EXTENDED_CATALOG_MODEL_IDS.length} uzman yapay zeka modeli
             </p>
           </div>
           {isCatalogUnlocked && onLockModelCatalog ? (
@@ -1669,7 +1711,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     Şifreli Model Kataloğu
                   </h3>
                   <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 leading-relaxed">
-                    En güçlü {PUBLIC_CHAT_MODEL_IDS.length} amiral gemisi model (Claude Fable 5.2, Opus/Sonnet/Haiku 5.5, GPT-Astra, ChatGPT-5.2 Pro, ChatGPT-5 Omni, Sol, Luna ve Gemini 4 serisi) sohbette herkese açıktır. Diğer {EXTENDED_CATALOG_MODEL_IDS.length} uzman modele erişmek için şifreyi girin.
+                    Bu alanda yer alan {EXTENDED_CATALOG_MODEL_IDS.length} gelişmiş ve uzman yapay zeka modelini (GPT-4.1, o3, Claude 4.5, DeepSeek R1/R2, Grok 3, Llama 4, Mistral, Qwen vb.) görüntülemek için şifreyi girin.
                   </p>
                 </div>
               </div>
@@ -1718,7 +1760,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       Sohbet Seçicisinde Tüm Modelleri Göster
                     </span>
                     <span className="text-[11px] text-neutral-500 dark:text-neutral-400">
-                      Kapalıyken sohbette sade liste görünür; buradan seçtiğiniz model sohbete sabitlenir.
+                      Sohbet üst menüsünden tek tıkla geçiş yapılabilsin
                     </span>
                   </div>
                   {onToggleExtendedModelsInChat && (
@@ -1747,7 +1789,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     data-testid="extended-catalog-search"
                     value={catalogSearchQuery}
                     onChange={(e) => setCatalogSearchQuery(e.target.value)}
-                    placeholder="Model, üretici veya yetenek ara (Örn: DeepSeek R2, Grok, Veo)..."
+                    placeholder="Model, üretici veya yetenek ara (Örn: DeepSeek R2, Grok, Gemini)..."
                     aria-label="Katalogda Model Ara"
                     className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-neutral-100 dark:bg-neutral-800/80 text-xs text-neutral-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500/30"
                   />
@@ -1776,12 +1818,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   const m = LUXO_MODELS[mId];
                   if (!m) return null;
                   const isActive = activeModelId === mId;
+                  const av = isModelExecutableWithProviders(
+                    mId,
+                    providerStatus,
+                    user,
+                    m.allowGuest !== false
+                  );
                   return (
                     <button
                       key={m.id}
                       type="button"
                       data-testid={`extended-model-card-${m.id}`}
                       onClick={() => {
+                        if (!av.unlocked) {
+                          showToast(`${m.name} kilitli: ${av.reasonLabelTr}`);
+                          return;
+                        }
                         setDefaultModelId(m.id);
                         onSelectModelFromSettings?.(m.id);
                         showToast(`${m.name} sohbet için seçildi.`);
@@ -1789,7 +1841,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       className={`p-3.5 rounded-2xl border text-left transition cursor-pointer flex flex-col justify-between gap-2 ${
                         isActive
                           ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-950/30 shadow-xs'
-                          : 'border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-[#18181b] hover:border-neutral-300 dark:hover:border-neutral-700'
+                          : av.unlocked
+                          ? 'border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-[#18181b] hover:border-neutral-300 dark:hover:border-neutral-700'
+                          : 'border-neutral-200/70 dark:border-neutral-800/70 bg-neutral-50/80 dark:bg-[#141518] opacity-75'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -1809,15 +1863,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             </span>
                           </div>
                         </div>
-                        {isActive ? (
+                        {!av.unlocked ? (
+                          <span className="px-2 py-0.5 rounded-md bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 text-[10px] font-semibold flex items-center gap-1 shrink-0">
+                            <Lock className="w-2.5 h-2.5" />
+                            Kilitli
+                          </span>
+                        ) : isActive ? (
                           <span className="px-2 py-0.5 rounded-md bg-blue-600 text-white text-[10px] font-bold shrink-0">
                             Aktif
                           </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-md bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 text-[10px] font-semibold shrink-0">
-                            Seç
-                          </span>
-                        )}
+                        ) : null}
                       </div>
                       <p className="text-[11px] text-neutral-500 dark:text-neutral-400 line-clamp-2 leading-snug">
                         {m.description}
